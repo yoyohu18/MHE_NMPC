@@ -1,0 +1,611 @@
+% Condensed bilingual (English / Chinese) version of thesis Chapters 3 and 4.
+% Source of truth: paper/thesis/Chapter3/ch_model.tex, Chapter4/ch_framework.tex
+% (commit 56ebccb; updated 2026-11-05 for the reduced velocity--mass estimator as
+% the deployed default and for the restructured Chapter 4, Section 4.2).
+% Build: xelatex ch3-4_bilingual.tex (twice).
+\documentclass[10pt,a4paper]{article}
+\usepackage[UTF8,fontset=none]{ctex}
+\setCJKmainfont{Noto Serif CJK SC}[BoldFont={Noto Serif CJK SC Bold},AutoFakeSlant]
+\setCJKsansfont{Noto Sans CJK SC}
+\usepackage[margin=18mm]{geometry}
+\usepackage{amsmath,amssymb,bm}
+\usepackage{siunitx}
+\usepackage{booktabs,tabularx,array}
+\usepackage{paracol}
+\usepackage{needspace}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+
+\setlength{\columnsep}{7mm}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{4pt}
+\linespread{1.08}
+\numberwithin{equation}{section}
+\raggedbottom
+\renewcommand{\thetable}{\thesection.\arabic{table}}
+\newcommand{\dJ}{\Delta J}
+\newcommand{\mB}{m_B}
+\newcommand{\mP}{m_P}
+\newcommand{\mT}{m_T}
+\newcommand{\Jb}{J_B}
+\newcommand{\Jt}{J_T}
+\newcommand{\Tphys}{T_{\mathrm{phys}}}
+\newcommand{\tauphys}{\bm{\tau}_{\mathrm{phys}}}
+\newcommand{\ev}{\bm{e}_3}
+\newcommand{\rp}{\bm{r}_p}
+
+% One bilingual block: English left, Chinese right.
+\newcommand{\pair}[2]{\begin{paracol}{2}#1\switchcolumn #2\end{paracol}}
+\newcommand{\bsec}[2]{\section{#1\quad{\normalfont\large #2}}}
+\newcommand{\bsub}[2]{\needspace{8\baselineskip}\subsection{#1\quad{\normalfont #2}}}
+
+\title{Chapters 3--4, condensed (English / Chinese)\\[2pt]
+\large 第3--4章 精简中英对照版}
+\date{}
+\begin{document}
+\maketitle
+\vspace{-8mm}
+\pair{\small\itshape Condensed from the dissertation. Definitions, key equations and design decisions
+only; derivations, justifications and experimental evidence are omitted (see
+the full text). Equation numbers are local to this document.}
+{\small 由学位论文压缩而来，只保留定义、关键公式和设计决定；推导、论证和实验证据从略（见全文）。公式编号仅在本文内部有效。}
+
+%======================================================================
+\setcounter{section}{2}
+\bsec{Modeling and Parameter Structure}{建模与参数结构}
+
+\pair{A grasped parcel changes both the mass and the roll/pitch inertia. For a
+payload on the thrust axis both are governed by one online scalar: the
+composite mass $\mT$, identified from the translational channel. The inertia
+increment follows from $\mT$ and a nominal gripper arm. No payload mass is
+given to either optimiser, and the estimator receives no attach or release
+notification. The estimator and controller models built on this chapter are
+collected in Section~\ref{sec:models}.}
+{抓取包裹会同时改变质量和滚转/俯仰惯量。对于位于推力轴上的载荷，二者由同一个在线标量决定：复合质量 $\mT$，由平动通道辨识。惯量增量由 $\mT$ 和夹爪的名义力臂算出。两个优化器都不提供载荷质量，估计器也不接收吸附或释放通知。基于本章的估计器与控制器模型集中放在第~\ref{sec:models}~节。}
+
+\bsub{System definition and assumptions}{系统定义与假设}
+
+\pair{World frame ENU (gravity along $-z$); body frame FLU with origin at the
+rotor-disc centre, not at the centre of mass.}
+{世界系为 ENU（重力沿 $-z$）；机体系为 FLU，原点在旋翼盘几何中心，而不在质心。}
+\needspace{6\baselineskip}\begin{equation}
+x=[\bm p;\bm v;\bm q;\bm\omega]\in\mathbb R^{13},\qquad
+u=[T;\bm\tau]\in\mathbb R^{4},\qquad \mT=\mB+\mP .
+\end{equation}
+\pair{Assumptions: (1) the bare airframe is balanced about the body origin;
+(2) the payload is a point mass rigidly attached on the thrust axis,
+$\rp=[0,0,r_z]^\top$, $r_z<0$; (3) rotor thrust follows the static quadratic
+law. Attitude: unit quaternion, Hamilton convention, scalar first,
+$\bm\omega$ in the body frame. The vertical thrust fraction is}
+{假设：(1) 空机关于机体原点平衡；(2) 载荷是刚性挂在推力轴上的质点，$\rp=[0,0,r_z]^\top$，$r_z<0$；(3) 旋翼推力服从静态平方律。姿态用单位四元数，Hamilton 约定、标量在前，$\bm\omega$ 在机体系表示。推力的竖直分量比例为}
+\needspace{6\baselineskip}\begin{equation}
+\cos\phi\cos\theta=\ev^\top R(\bm q)\ev=1-2(q_x^2+q_y^2).
+\label{eq:costheta}
+\end{equation}
+
+\bsub{Dynamics}{动力学}
+\needspace{8\baselineskip}\begin{align}
+\dot{\bm p}&=\bm v,\qquad
+\dot{\bm q}=\tfrac12\,\bm q\otimes[0,\bm\omega]=\tfrac12\,\Xi(\bm q)\bm\omega,\label{eq:kin}\\
+\dot{\bm v}&=\frac{1}{\mT}\bigl(R(\bm q)\ev T-k_d\bm v\bigr)-g\ev,\label{eq:trans}\\
+\dot{\bm\omega}&=\Jt^{-1}\bigl(\bm\tau-\bm\omega\times\Jt\bm\omega\bigr).\label{eq:rot}
+\end{align}
+\pair{The kinematics contain no physical parameter, and $\bm q^\top\Xi(\bm q)=0$
+preserves $\lVert\bm q\rVert$. The mass enters only as the gain $1/\mT$ in
+\eqref{eq:trans}; the inertia increment only inside $\Jt$ in
+\eqref{eq:rot}, taken about the composite centre of mass. Projected on $\ev$,
+with vertical drag neglected:}
+{运动学不含物理参数，且 $\bm q^\top\Xi(\bm q)=0$ 保持 $\lVert\bm q\rVert$ 不变。质量只以增益 $1/\mT$ 出现在 \eqref{eq:trans}；惯量增量只出现在 \eqref{eq:rot} 的 $\Jt$ 中，并取关于复合质心。投影到 $\ev$、忽略竖直阻力：}
+\needspace{6\baselineskip}\begin{equation}
+\mT(g+a_z)=T\cos\phi\cos\theta .
+\label{eq:vbal}
+\end{equation}
+
+\bsub{Mass--inertia coupling}{质量--惯量耦合}
+\pair{The composite centre of mass moves to $\bm c=(\mP/\mT)\rp$, so the
+parallel-axis theorem is applied about that point and both bodies contribute.
+The two terms collapse onto the reduced mass:}
+{复合质心移到 $\bm c=(\mP/\mT)\rp$，因此平行轴定理要对这一点应用，两个刚体都有贡献。两项合并后正好是折合质量：}
+\needspace{6\baselineskip}\begin{equation}
+\mu=\frac{\mB\mP}{\mT},\qquad
+\dJ=\mB\Bigl(\frac{\mP}{\mT}d\Bigr)^2+\mP\Bigl(\frac{\mB}{\mT}d\Bigr)^2=\mu r_z^2,\qquad
+\Jt=\Jb+\mathrm{diag}(\mu r_z^2,\ \mu r_z^2,\ 0).
+\label{eq:reduced}
+\end{equation}
+\pair{The increment is isotropic in roll/pitch, diagonal, and zero in yaw. The
+naive $\mP r_z^2$ overestimates it by $\mT/\mB$ (\SI{14.5}{\percent} at
+\SI{0.30}{\kg}). With $\kappa=(J_{xx}+\dJ)/J_{xx}$, $\mB=\SI{2.0643}{\kg}$,
+$J_{xx}=\SI{0.0142}{\kg\meter\squared}$, $r_z=\SI{-0.27}{\meter}$:}
+{增量在滚转/俯仰上各向同性、为对角阵、偏航分量为零。朴素写法 $\mP r_z^2$ 会高估 $\mT/\mB$ 倍（\SI{0.30}{\kg} 时高估 \SI{14.5}{\percent}）。记 $\kappa=(J_{xx}+\dJ)/J_{xx}$，取 $\mB=\SI{2.0643}{\kg}$、$J_{xx}=\SI{0.0142}{\kg\meter\squared}$、$r_z=\SI{-0.27}{\meter}$：}
+\begin{center}\small
+\begin{tabular}{@{}lccc@{}}
+\toprule
+& $\mu$ [kg] & $\dJ$ [\si{\kg\meter\squared}] & $\kappa$\\
+\midrule
+$\mP=\SI{0.15}{\kg}$ & 0.140 & 0.0102 & 1.72\\
+$\mP=\SI{0.30}{\kg}$ & 0.262 & 0.0191 & 2.34\\
+\bottomrule
+\end{tabular}
+\end{center}
+\pair{A \SI{15}{\percent} mass change is a more than two-fold inertia change;
+mass adaptation alone does not cover it.}
+{质量变化 \SI{15}{\percent}，惯量却变成两倍多；只做质量自适应覆盖不了后者。}
+
+\bsub{Single-parameter estimation structure}{单参数估计结构}
+\pair{The mass changes within a flight and is observable through $1/\mT$; the
+arm is a property of the gripper and is held nominal. The inertia is therefore
+derived, never a decision variable, and vanishes by itself at release:}
+{质量在飞行中会变，且可通过 $1/\mT$ 观测；力臂是夹爪的属性，取名义值。因此惯量是推出来的，从不作为决策变量，释放后自动归零：}
+\needspace{6\baselineskip}\begin{equation}
+\mP=(\mT-\mB)^+,\qquad
+\boxed{\ \dJ(\mT)=\frac{\mB(\mT-\mB)^+}{\mT}\,r_z^2\ }
+\label{eq:dJofm}
+\end{equation}
+\pair{The rotational model of this platform has three known errors (airframe
+inertia, rotor-drag moment, torque bias). The \textbf{deployed estimator
+therefore does not integrate the rotational dynamics at all}: it keeps only the
+translational dynamics \eqref{eq:trans}, takes the measured attitude as a known
+input, and has velocity and mass as its only states
+(Section~\ref{sec:models}). No inertia, torque or arm enters it.}
+{该平台的转动模型有三处已知误差（空机惯量、旋翼阻力力矩、力矩偏置）。因此\textbf{部署的估计器完全不积分转动动力学}：只保留平动动力学 \eqref{eq:trans}，把测得的姿态当作已知输入，状态只有速度和质量（见第~\ref{sec:models}~节）。惯量、力矩、力臂都不进入估计器。}
+
+\pair{The evaluation campaigns were flown with an earlier \emph{full-state}
+estimator that does integrate \eqref{eq:kin} and \eqref{eq:rot}. It keeps the
+mass off the rotational model only directly, inserting the increment as a known
+parameter from the previous solution $\hat m^-$ (``lagged''):}
+{评估实验用的是更早的\emph{全状态}估计器，它会积分 \eqref{eq:kin} 和 \eqref{eq:rot}。它只是不让质量\emph{直接}作用于转动模型：惯量增量用上一次解 $\hat m^-$ 算出后作为已知参数代入（“滞后”处理）：}
+\needspace{6\baselineskip}\begin{equation}
+\frac{\partial\dot{\bm\omega}}{\partial\mT}\Big|_{\mathrm{MHE}}=0,\qquad
+\dJ^{\mathrm{lag}}=\frac{\mB(\hat m^- -\mB)^+}{\hat m^-}\,r_z^2\ \ \text{(constant within the window / 窗内为常数)}.
+\label{eq:lag}
+\end{equation}
+\begin{center}\small
+\begin{tabular}{@{}llll@{}}
+\toprule
+Treatment 处理 & $\dJ$ in MHE & $\partial\dot{\bm\omega}/\partial\mT$ & Status 状态\\
+\midrule
+omitted 省略 & 0 & 0 & available, off 可用，关闭\\
+lagged 滞后 & \eqref{eq:dJofm} at $\hat m^-$ & 0 & campaigns 评估实验\\
+live 实时 & \eqref{eq:dJofm} at $\mT$ & $\neq0$ & rejected 弃用\\
+\midrule
+not integrated 不积分 (reduced) & none 无 & --- & deployed 部署默认\\
+\bottomrule
+\end{tabular}
+\end{center}
+\pair{In the full-state estimator rotational error still reaches the mass
+through the estimated attitude (which sets the thrust direction), and the lagged
+mass feeds the next window. The reduced estimator removes both paths: it has no
+estimated attitude and no inertia.}
+{在全状态估计器里，转动误差仍可经估计姿态（它决定推力方向）传到质量，滞后的质量也会影响下一个窗口。降阶估计器把这两条路径都去掉了：它没有估计姿态，也没有惯量。}
+
+\begin{center}\small
+\begin{tabularx}{\textwidth}{@{}l X l@{}}
+\toprule
+Parameter 参数 & Identity 身份 & Value 取值\\
+\midrule
+$\mT$ & \textbf{MHE decision variable} 估计器决策变量 & --- \\
+$\dJ$, $\mP$ & derived from $\mT$; not in the deployed estimator 由 $\mT$ 推出；不进入部署的估计器 & \eqref{eq:dJofm} \\
+$r_z$ & nominal gripper geometry 名义夹爪几何 & \SI{-0.27}{\meter} \\
+$\bm c_{xy}$ & not modelled, held at 0 不建模，取 0 & --- \\
+$\mB$, $\Jb$ & calibration 标定 & \SI{2.0643}{\kg}; diag(0.0142, 0.0142, 0.0210) \\
+$k_f$, $k_m$ & calibration 标定 & \SI{8.55e-6}{\newton\second\squared}, \SI{0.016}{\meter} \\
+$k_d$, $g$ & constants 常数 & 0.05, 9.81 \\
+\bottomrule
+\end{tabularx}
+\end{center}
+\pair{\textbf{Information boundary.} No task-specific payload mass enters the
+estimator or the controller, and no attach/release notification enters the
+estimator. Two platform constants remain: the nominal arm $r_z$ and the
+\SI{0.30}{\kg} payload envelope used for the attach-time inertia floor.}
+{\textbf{信息边界。}估计器和控制器都不接收任务相关的载荷质量，估计器不接收吸附/释放通知。保留的两个平台常数：名义力臂 $r_z$，以及吸附时惯量地板所用的 \SI{0.30}{\kg} 载荷包线。}
+
+\bsub{Measured input and interfaces}{测量输入与接口}
+\pair{The wrench is reconstructed from measured rotor speeds (X frame,
+$l=\SI{0.174}{\meter}$):}
+{力/力矩由实测转速重建（X 型布局，$l=\SI{0.174}{\meter}$）：}
+\needspace{6\baselineskip}\begin{equation}
+\begin{bmatrix}\Tphys\\ \tauphys\end{bmatrix}=
+\underbrace{\begin{bmatrix}1&1&1&1\\-l&l&l&-l\\-l&l&-l&l\\-k_m&-k_m&k_m&k_m\end{bmatrix}}_{M}
+\begin{bmatrix}F_1\\F_2\\F_3\\F_4\end{bmatrix},\qquad F_i=k_f\omega_i^2 .
+\label{eq:phys}
+\end{equation}
+\pair{Rotor speeds are sampled at \SI{250}{\hertz} and averaged per
+\SI{10}{\hertz} interval. The deployed estimator uses only the first row,
+$\Tphys$; the full-state estimator uses all four. The commanded input cannot be
+used: with $T_{\mathrm{cmd}}=\tilde m g$, the estimate returns $\tilde m$ for any
+$\tilde m$ and carries no information.}
+{转速以 \SI{250}{\hertz} 采样，在每个 \SI{10}{\hertz} 估计间隔内取平均。部署的估计器只用第一行 $\Tphys$，全状态估计器四行都用。不能用指令输入：若 $T_{\mathrm{cmd}}=\tilde m g$，估计结果对任意 $\tilde m$ 都等于 $\tilde m$，不含任何信息。}
+
+\pair{\textbf{Autopilot interface.} Three torques: the \emph{predicted} torque
+(decision variable, never leaves the solver); the \emph{body-rate setpoint}
+sent to PX4 at \SI{50}{\hertz}, interpolated along the predicted trajectory
+and scaled for the payload inertia; the \emph{physical} torque from
+\eqref{eq:phys}, the only one the full-state estimator sees (the deployed
+estimator sees no torque).}
+{\textbf{与飞控的接口。}三种力矩：\emph{预测力矩}（决策变量，不出求解器）；\emph{角速度设定值}，以 \SI{50}{\hertz} 发给 PX4，沿预测轨迹插值并按载荷惯量缩放；\emph{物理力矩}，由 \eqref{eq:phys} 得到，是全状态估计器唯一看到的力矩（部署的估计器不看任何力矩）。}
+
+\bsub{Assumptions and limits}{假设与局限}
+\pair{\begin{itemize}\setlength\itemsep{1pt}
+\item \textbf{Exact:} no thrust moment for an on-axis load; $\mu r_z^2$ exact for point masses; zero yaw increment.
+\item \textbf{Centred grasp:} a residual offset $r_{xy}$ gives trim $\mP g r_{xy}$ (\SI{0.09}{\newton\meter} at \SI{3}{\centi\meter}, \SI{0.30}{\kg}), absorbed by the PX4 rate integrator.
+\item \textbf{Nominal arm:} realised \SIrange{0.25}{0.30}{\meter}; $\dJ$ error $-14$ to $+23$\,\%.
+\item \textbf{Parcel inertia} neglected ($\approx$\SI{2}{\percent} of $\dJ$).
+\item \textbf{Airframe rotational model} approximate: $J_{xx}$ is \SI{60}{\percent} of the simulator value; rotor-drag moment missing; torque bias $\sim$\SI{0.01}{\newton\meter} --- the reason the deployed estimator does not integrate it.
+\item \textbf{Lag} (full-state estimator only) of one \SI{0.1}{\second} solve; $\dot{\Jt}\bm\omega$ omitted.
+\item \textbf{Static rotor model:} an error in $k_f$ passes one-for-one into $\hat m$; the deployed estimator flags it only when the estimate leaves the health band, and cannot correct it.
+\end{itemize}}
+{\begin{itemize}\setlength\itemsep{1pt}
+\item \textbf{精确成立：}轴上载荷不产生推力力矩；质点情形 $\mu r_z^2$ 精确；偏航增量为零。
+\item \textbf{居中抓取：}残余偏心 $r_{xy}$ 产生配平力矩 $\mP g r_{xy}$（\SI{3}{\centi\meter}、\SI{0.30}{\kg} 时 \SI{0.09}{\newton\meter}），由 PX4 速率环积分项吸收。
+\item \textbf{名义力臂：}实际为 \SIrange{0.25}{0.30}{\meter}，$\dJ$ 误差 $-14$ 至 $+23$\,\%。
+\item \textbf{包裹自身惯量}忽略（约为 $\dJ$ 的 \SI{2}{\percent}）。
+\item \textbf{空机转动模型}近似：$J_{xx}$ 只有仿真模型值的 \SI{60}{\percent}；缺旋翼阻力力矩；力矩偏置约 \SI{0.01}{\newton\meter}——这正是部署的估计器不积分转动动力学的原因。
+\item \textbf{滞后}（仅全状态估计器）一个 \SI{0.1}{\second} 求解周期；忽略 $\dot{\Jt}\bm\omega$。
+\item \textbf{静态旋翼模型：}$k_f$ 的相对误差一比一传到 $\hat m$；部署的估计器只在估计值越出健康带时报警，无法纠正。
+\end{itemize}}
+
+%======================================================================
+\clearpage
+\bsec{The MHE--NMPC Framework}{MHE--NMPC 框架}
+
+\bsub{Architecture}{系统架构}
+\pair{The only inputs are odometry and rotor speeds. The estimator publishes one
+atomic frame (mass, derived inertia, evidence score, health), read by both the
+NMPC model and the inner-loop scaling. Rates: MHE \SI{10}{\hertz} over a
+\SI{2}{\second} window; NMPC \SI{20}{\hertz} over a \SI{1}{\second} preview;
+setpoints at \SI{50}{\hertz}.}
+{输入只有里程计和转速。估计器发布一个原子帧（质量、推出的惯量、证据分数、健康位），NMPC 模型和内环缩放都只读这一帧。频率：MHE \SI{10}{\hertz}、窗口 \SI{2}{\second}；NMPC \SI{20}{\hertz}、预测 \SI{1}{\second}；设定值 \SI{50}{\hertz}。}
+
+\bsub{Estimator and controller models}{估计器与控制器模型}\label{sec:models}
+\pair{The three models of one plant are collected here. R is the deployed
+estimator, F the full-state estimator used in the evaluation campaigns, and the
+NMPC model is the controller's prediction model. R and F are selected by one
+switch (entry points default to \texttt{reduced} since 5 Nov 2026, library
+default \texttt{full}) and share every interface.}
+{这里把同一被控对象的三个模型放在一起：R 是部署的估计器，F 是评估实验所用的全状态估计器，NMPC 模型是控制器的预测模型。R 和 F 由一个开关选择（自 2026-11-05 起入口脚本默认 \texttt{reduced}，库默认仍为 \texttt{full}），两者共用全部接口。}
+\begin{center}\small Switch / 开关：\texttt{MHE\_MODEL\_VARIANT=reduced|full}\end{center}
+\begin{center}\small
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{0.17\textwidth} >{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}X@{}}
+\toprule
+ & \textbf{R} (deployed 部署) & \textbf{F} (campaigns 评估实验) & \textbf{NMPC} \\
+\midrule
+State 状态 & $[\bm v;\mT]\in\mathbb R^4$ & $[\bm p;\bm v;\bm q;\bm\omega;\mT]\in\mathbb R^{14}$ & $[\bm p;\bm v;\bm q;\bm\omega]\in\mathbb R^{13}$\\
+Known inputs 已知输入 & $\tilde{\bm q}$, $\Tphys$ ($\mathbb R^5$) & $\Tphys,\tauphys,\dJ^{\mathrm{lag}},\bm c_{xy}{=}0$ ($\mathbb R^7$) & $x_{\mathrm{ref}},\mT,\dJ,\bm c_{xy}{=}0,\hat{\bm d}$ ($\mathbb R^{20}$)\\
+Rotational dyn. 转动动力学 & not integrated 不积分 & integrated, $\partial\dot{\bm\omega}/\partial\mT=0$ & integrated with $\Jt(\dJ)$\\
+Residual 残差 & velocity 速度 $\bm e^v\in\mathbb R^3$ & full state 全状态 $\bm e\in\mathbb R^{13}$ & tracking + input 跟踪+输入\\
+Rate 频率 & \SI{10}{\hertz}, $N=20$, \SI{0.1}{s} & same 同 & \SI{20}{\hertz}, $N=20$, \SI{0.05}{s}\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\pair{\textbf{R (deployed).} Velocity and mass are the only states; the
+measured attitude and the interval-averaged thrust are known parameters:}
+{\textbf{R（部署）。}状态只有速度和质量；测得的姿态和区间平均推力作为已知参数：}
+\needspace{6\baselineskip}\begin{equation}
+\begin{gathered}
+x_{\mathrm R}=[\bm v;\mT]\in\mathbb R^4,\qquad p_{\mathrm R}=[\tilde{\bm q};\Tphys],\quad \tilde{\bm q}=\frac{\bm q^{\mathrm{meas}}}{\lVert\bm q^{\mathrm{meas}}\rVert};\\
+\dot{\bm v}=\frac{1}{\mT}\Bigl(\frac{R(\tilde{\bm q})\ev}{\lVert\tilde{\bm q}\rVert^2}\Tphys-k_d\bm v\Bigr)-g\ev+\bm w,\quad \dot{\mT}=0;\qquad
+\bm e^v_j=\bm y^v_j-\bm v_j .
+\end{gathered}
+\label{eq:redmodel}
+\end{equation}
+\pair{$R(\bm q)$ is quadratic in $\bm q$, so dividing by $\lVert\tilde{\bm q}\rVert^2$
+normalises inside the model, and $R(\bm q)=R(-\bm q)$ needs no hemisphere
+alignment. The attitude is an input: no quaternion residual, no norm penalty.
+Since the mass enters the plant only as $1/\mT$ in \eqref{eq:trans}, the
+velocity response to a known thrust direction carries all the window's
+information about it; supplying the measured attitude removes the path by which
+rotational model error reached the mass in F. Price: attitude noise enters the
+thrust direction unfiltered (untested, as SITL odometry is near-ideal).}
+{$R(\bm q)$ 是 $\bm q$ 的二次型，除以 $\lVert\tilde{\bm q}\rVert^2$ 就在模型内部完成归一化，且 $R(\bm q)=R(-\bm q)$，无需半球对齐。姿态是输入而不是状态：没有四元数残差，也没有模长代价。质量只以 $1/\mT$ 出现在 \eqref{eq:trans} 中，所以给定推力方向和大小后，速度响应已包含窗口内关于质量的全部信息；直接用测得的姿态，就切断了 F 中转动模型误差传到质量的路径。代价：姿态测量噪声不经滤波进入推力方向（仿真里程计近乎理想，未经实验检验）。}
+
+\pair{\textbf{F (campaigns).} The mass is augmented to the 13-state vehicle
+model; process noise on the 13 physical states only; the residual compares
+velocities, never accelerations:}
+{\textbf{F（评估实验）。}质量增广到 13 维飞行器模型上；过程噪声只加在 13 个物理状态上；残差比较的是速度而不是加速度：}
+\needspace{6\baselineskip}\begin{equation}
+x_{\mathrm{aug}}=[x;\mT]\in\mathbb R^{14},\ \dot{\mT}=0;\qquad
+p_{\mathrm{MHE}}=[\Tphys;\tauphys;\dJ^{\mathrm{lag}};c_x;c_y]\in\mathbb R^{7};\qquad
+\bm e_i=\bm y_i-x_i=[\bm e^p;\bm e^v;\bm e^q;\bm e^\omega]_i .
+\end{equation}
+
+\pair{\textbf{NMPC.} $\mT$ is the published (filtered) estimate, $\dJ$ is
+\eqref{eq:dJofm} at it, $\bm c_{xy}=0$, and $\hat{\bm d}$ is the residual
+specific force. The controller is the only model that needs the inertia, and it
+derives it from the estimate:}
+{\textbf{NMPC。}$\mT$ 取发布的（滤波后）估计，$\dJ$ 为该值代入 \eqref{eq:dJofm}，$\bm c_{xy}=0$，$\hat{\bm d}$ 为残余比力。三个模型中只有控制器需要惯量，而且它从估计值推出惯量：}
+\needspace{6\baselineskip}\begin{equation}
+p_{\mathrm{NMPC}}=[x_{\mathrm{ref}};\mT;\dJ;\bm c_{xy};\hat{\bm d}]\in\mathbb R^{20},\qquad
+\dot{\bm v}=\frac{1}{\mT}\bigl(R\ev T-k_d\bm v\bigr)-g\ev+\hat{\bm d},\qquad
+\Jt=\mathrm{diag}(J_{xx}+\dJ,J_{yy}+\dJ,J_{zz}).
+\label{eq:predmodel}
+\end{equation}
+
+\bsub{Moving horizon estimator}{滑动时域估计器}
+\pair{Both estimators solve the same problem; $F_M$ is one RK4 step of the
+respective model and $C$ selects the velocity (R) or the 13 vehicle states (F):}
+{两种估计器求解同一形式的问题；$F_M$ 是各自模型的一步 RK4，$C$ 选出速度（R）或 13 个飞行器状态（F）：}
+\needspace{6\baselineskip}\begin{equation}
+\begin{aligned}
+\min_{x_{0:N},w_{0:N-1}}\ & \lVert x_0-\bar x_0\rVert^2_{W_0}
++\sum_{j=0}^{N-1}\beta_j\bigl(\lVert y_j-Cx_j\rVert^2_{W_y}+\lVert w_j\rVert^2_{W_w}\bigr)\\
+\text{s.t.}\ & x_{j+1}=F_M(x_j,p_j)+Gw_j,\quad G=\begin{bmatrix}I_{n_w}\\0\end{bmatrix}\ (n_w=3\ \text{R},\ 13\ \text{F}),\quad
+\underline m\le\mT\le\overline m.
+\end{aligned}
+\label{eq:mhe}
+\end{equation}
+\pair{$N=20$, $\Delta t=\SI{0.1}{\second}$; stage $j$ pairs the measurement at
+the start of the interval with the input averaged over it. Weights by Bryson's
+rule (F):}
+{$N=20$，$\Delta t=\SI{0.1}{\second}$；第 $j$ 段把区间起点的测量与该区间平均输入配对。权重按 Bryson 规则（F）：}
+\needspace{6\baselineskip}\begin{equation}
+\begin{gathered}
+W_y=\mathrm{diag}(\sigma_p^{-2}I_3,\sigma_v^{-2}I_3,\sigma_q^{-2}I_4,\sigma_\omega^{-2}I_3),\quad
+\sigma_p=\SI{0.02}{\meter},\ \sigma_v=\SI{0.05}{\meter\per\second},\ \sigma_q=0.01,\ \sigma_\omega=\SI{0.02}{\radian\per\second};\\
+W_w=\mathrm{diag}(10^4I_6,10^5I_4,10^3I_3);\qquad
+W_0=\mathrm{diag}(10^3I_6,10^4I_4,10^2I_3,\sigma_{m,0}^{-2}),\ \sigma_{m,0}=\SI{3.16}{\kg};\\
+\text{R: }W_y=\sigma_v^{-2}I_3,\quad W_w=10^4I_3,\quad W_0=\mathrm{diag}(10^3I_3,\sigma_{m,0}^{-2}).
+\end{gathered}
+\end{equation}
+\pair{R uses exactly the velocity and mass blocks of F's weights, so the
+evidence for the mass is weighted identically. Process noise is tighter than
+measurement noise so that persistent thrust--motion disagreement is explained by
+the mass; the mass anchor is almost uninformative but non-zero (zero caused 472
+solver failures).}
+{R 的权重正是 F 权重中速度和质量那几块，因此两者对质量证据的加权完全相同。过程噪声权重比测量权重更紧，迫使推力与运动之间的持续不符由质量来解释；质量锚点几乎不含信息但不为零（设为零曾导致 472 次求解失败）。}
+
+\pair{\textbf{Mass bounds and health check.} F: hard bound
+$[0.95\mB,\SI{5}{\kg}]$; a \SI{-10}{\percent} thrust map needs $0.9\mB=\SI{1.858}{\kg}$
+and is pinned at the bound (replay: 107 solves ended at the iteration limit, all
+at \SI{-10}{\percent}). R separates the numerical bound,
+$[0.70\mB,\SI{5}{\kg}]$, from a physical \emph{health band} checked after each solve:}
+{\textbf{质量边界与健康检查。}F：硬边界 $[0.95\mB,\SI{5}{\kg}]$；\SI{-10}{\percent} 推力映射要求 $0.9\mB=\SI{1.858}{\kg}$，会被钉在边界上（回放中 107 次求解跑满迭代，全部在 \SI{-10}{\percent} 工况）。R 把数值边界 $[0.70\mB,\SI{5}{\kg}]$ 与物理\emph{健康带}分开，每次求解后检查：}
+\needspace{6\baselineskip}\begin{equation}
+\mB-\SI{0.10}{\kg}\le\hat m\le\mB+m_P^{\mathrm{env}}+\SI{0.10}{\kg}=[\SI{1.964}{\kg},\ \SI{2.464}{\kg}].
+\label{eq:healthband}
+\end{equation}
+\pair{Below: possible thrust-map under-estimate; above: out of envelope or
+over-estimate; also flagged near the numerical box or non-finite. The flag acts
+on the first offending solve and clears after 10 in-band solves. A flagged
+estimate is not forwarded: the frame is unhealthy and the controller keeps its
+last accepted model. Margins from the 312-flight replay (nominal estimates
+\SIrange{1.985}{2.368}{\kg}); no simulator truth used. The check detects but
+cannot correct: translation alone sees only $\Tphys/\mT$, so mass and thrust
+scale are not estimated jointly (\SI{-10}{\percent} with \SI{0.30}{\kg} loaded,
+$\hat m\approx\SI{2.13}{\kg}$, is not detected).}
+{低于下限：推力映射可能偏小；高于上限：超出包线或推力映射偏大；贴近数值边界或非有限值也会报。第一次越界即生效，连续 10 次回到带内才恢复。被标记的估计不转发：帧标为不健康，控制器保持上一帧接受的模型。阈值来自 312 架回放（名义推力下估计范围 \SIrange{1.985}{2.368}{\kg}），不使用仿真真值。健康检查只能发现、不能纠正：仅凭平动方程只能看到 $\Tphys/\mT$，所以不同时估计质量和推力比例（\SI{-10}{\percent} 且带 \SI{0.30}{\kg} 时 $\hat m\approx\SI{2.13}{\kg}$，检测不到）。}
+
+\pair{\textbf{Input gating and the grasp gap.} The thrust is admitted only while
+the odometry height exceeds \SI{0.5}{\meter} (ground support); inputs older than
+\SI{0.30}{\second} clear the window. The grasp hover at \SI{0.35}{\meter} is below
+the gate, so in every inspected flight the window is cleared 1--3\,s before the
+attach and rebuilt about \SI{6}{\second} later, after lift-off, from the
+window-balance seed. The grasp is never inside a window.}
+{\textbf{输入门控与抓取空窗。}只有在里程计高度高于 \SI{0.5}{\meter} 时才接收推力输入（防地面支撑力）；输入超过 \SI{0.30}{\second} 未更新就清空窗口。抓取悬停高度 \SI{0.35}{\meter} 低于门槛，所以在检查过的每一架里，窗口都在吸附前 1--3\,s 被清空，离地后约 \SI{6}{\second} 再用窗口力平衡种子重建。抓取过程从不落在估计窗口内。}
+
+\pair{\textbf{Seed.} A prior-free window force balance, using only the two
+velocity endpoints (no differentiation):}
+{\textbf{初值种子。}不含先验的窗口力平衡，只用两个速度端点（不做数值微分）：}
+\needspace{6\baselineskip}\begin{equation}
+m^{(0)}=\frac{\sum_{i=0}^{N-1}T_i\cos\phi_i\cos\theta_i}{Ng+(v_{z,N}-v_{z,0})/\Delta t},
+\qquad\text{fallback / 退化时 } m^{(0)}=\operatorname{clip}(\Tphys/g).
+\label{eq:winbal}
+\end{equation}
+\pair{It sets the initial iterate and the arrival-cost mean (weak): where the
+solver starts, not where it converges.}
+{种子用作初始迭代点和到达代价均值（权重很弱）：只决定求解器从哪里出发，不决定收敛到哪里。}
+
+\pair{\textbf{Stage weights.} Residual-triggered de-weighting (pre-event stages
+$\times10^{-4}$ after a \SI{4.4}{\newton} thrust step) is enabled but rarely acts:
+its detections mostly fall inside the grasp gap, so in the 312-flight campaign it
+fired in 81 flights and changed the weights in 10. Weights are uniform in effect;
+forgetting and a mass random walk exist but are off. For R the de-weighting
+matrices are rebuilt on R's own blocks.}
+{\textbf{阶段权重。}残差触发的降权（推力阶跃超过 \SI{4.4}{\newton} 后，事件前各段权重乘 $10^{-4}$）是开着的，但几乎不起作用：它的检测大多落在抓取空窗内，所以 312 架实验中触发 81 架、真正改动权重的只有 10 架。实际效果是均匀权重；遗忘因子和质量随机游走已实现但关闭。R 的降权矩阵按 R 自己的维度重建。}
+
+\pair{\textbf{Solver failure.} A non-zero status or non-finite iterate is
+discarded and the frame marked unhealthy; after five consecutive failures the
+window is rebuilt and re-seeded from \eqref{eq:winbal}. F adopts the seed as its
+estimate; R uses it only as the arrival mean, keeps the last valid estimate, and
+logs status, SQP iterations and failure counts.}
+{\textbf{求解失败。}非零状态或非有限解一律丢弃，帧标为不健康；连续五次失败后重建窗口并用 \eqref{eq:winbal} 重新给种子。F 直接把种子当作当前估计；R 只把种子用作到达代价均值，保持上一帧有效估计，并记录状态码、SQP 迭代数和失败计数。}
+
+\bsub{Adaptive NMPC}{自适应 NMPC}
+\needspace{6\baselineskip}\begin{equation}
+\begin{aligned}
+\min_{u_{0:N-1}}\ &\sum_{k=0}^{N-1}\Bigl(\lVert e_{\mathrm{track},k}\rVert^2_Q+\lVert u_k-u_{\mathrm{hover}}\rVert^2_R\Bigr)+\lVert e_{\mathrm{track},N}\rVert^2_P\\
+\text{s.t.}\ & x_{k+1}=F(x_k,u_k;p_{\mathrm{NMPC}}),\quad \underline T\le T_k\le\overline T,\quad |\tau_{k,i}|\le\overline\tau_i,
+\end{aligned}
+\qquad
+T_h=\mT(g-\hat d_z),\ u_{\mathrm{hover}}=[T_h,0,0,0]^\top.
+\label{eq:nmpc}
+\end{equation}
+\pair{The hover baseline is recomputed from the live estimate; a stale
+(unloaded) baseline pulls thrust below equilibrium and leaves a steady-state
+error that a larger $R$ makes worse. $N=20$, $\Delta t=\SI{0.05}{\second}$;
+attitude error is the vector part of $\bm q_{\mathrm{ref}}^*\otimes\bm q$.
+Bryson tolerances: $L_p=\SI{0.1}{\meter}$, $L_v=\SI{0.3}{\meter\per\second}$,
+$L_q=0.05$, $L_\omega=\SI{0.3}{\radian\per\second}$, $L_T=\SI{2}{\newton}$,
+$L_{\tau,xy}=\SI{0.5}{\newton\meter}$, $L_{\tau,z}=\SI{0.2}{\newton\meter}$;
+terminal scaling 20/1/2/0.2.}
+{悬停基准按实时估计重算；过时的（空机）基准会把推力拉到平衡值以下，留下稳态误差，而且 $R$ 越大越严重。$N=20$，$\Delta t=\SI{0.05}{\second}$；姿态误差取 $\bm q_{\mathrm{ref}}^*\otimes\bm q$ 的向量部分。Bryson 容差：$L_p=\SI{0.1}{\meter}$、$L_v=\SI{0.3}{\meter\per\second}$、$L_q=0.05$、$L_\omega=\SI{0.3}{\radian\per\second}$、$L_T=\SI{2}{\newton}$、$L_{\tau,xy}=\SI{0.5}{\newton\meter}$、$L_{\tau,z}=\SI{0.2}{\newton\meter}$；终端缩放 20/1/2/0.2。}
+
+\pair{\textbf{Residual specific force} ($\mathcal L_1$-type predictor and
+adaptation law), compensating the translational effect of mass bias:}
+{\textbf{残余比力}（$\mathcal L_1$ 型状态预测器与自适应律），补偿质量偏差在平动上的影响：}
+\needspace{6\baselineskip}\begin{equation}
+\dot{\hat{\bm v}}=\bm a_{\mathrm{nom}}+\hat{\bm d}_{\mathrm{raw}}-a(\hat{\bm v}-\bm v),\quad
+\dot{\hat{\bm d}}_{\mathrm{raw}}=-\Gamma(\hat{\bm v}-\bm v),\quad
+\hat{\bm d}=\frac{\omega_c}{s+\omega_c}\hat{\bm d}_{\mathrm{raw}},\quad
+a=10,\ \Gamma=(a/2)^2,\ \omega_c=0.5 .
+\label{eq:l1}
+\end{equation}
+\pair{$\bm a_{\mathrm{nom}}$ uses the measured thrust and the published mass.
+$\hat{\bm d}$ is controller-only (never reaches the estimator or lifecycle),
+reset on an accepted commanded release, and held at zero below
+$0.4\mB g$ (ground support).}
+{$\bm a_{\mathrm{nom}}$ 用实测推力和发布的质量计算。$\hat{\bm d}$ 只在控制器中使用（不进估计器、不参与生命周期判决），有指令的释放被接受时复位，推力低于 $0.4\mB g$ 时（地面支撑）保持为零。}
+
+\pair{\textbf{Actuator envelope.} Throttle maps affinely to rotor speed
+($\omega_{\min}=150$, $\Delta\omega=\SI{850}{\radian\per\second}$), clipped to
+$[0.05,0.95]$:}
+{\textbf{执行器包线。}油门仿射映射到转速（$\omega_{\min}=150$，$\Delta\omega=\SI{850}{\radian\per\second}$），并截断在 $[0.05,0.95]$：}
+\needspace{6\baselineskip}\begin{equation}
+\eta(T)=\frac{\sqrt{T/4k_f}-\omega_{\min}}{\Delta\omega},\qquad
+T\in[\SI{1.27}{\newton},\ \SI{31.35}{\newton}];\qquad
+\overline\tau_{x,y}=\SI{0.5}{\newton\meter},\ \overline\tau_z=\SI{0.2}{\newton\meter}.
+\end{equation}
+\pair{A weight-based box ($2\mB g=\SI{40.5}{\newton}$) overstates thrust by
+\SI{29}{\percent}. Yaw costs $10.9\times$ more differential thrust than roll,
+so the yaw bound is marginally optimistic. \textbf{Solver:} acados, multiple
+shooting, RK4, Gauss--Newton, HPIPM, full SQP (RTI diverged silently).}
+{按重量定的推力框（$2\mB g=\SI{40.5}{\newton}$）会高估 \SI{29}{\percent}。偏航所需差动推力是滚转的 $10.9$ 倍，所以偏航力矩上限略偏乐观。\textbf{求解器：}acados，多重打靶、RK4、Gauss--Newton、HPIPM，完整 SQP（RTI 曾静默发散）。}
+
+\bsub{Continuous payload interface}{连续载荷接口}
+\needspace{6\baselineskip}\begin{equation}
+\mathcal P=\{\mT,\ \dJ_{xx},\dJ_{yy},\dJ_{zz},\ J_{xx},J_{yy},J_{zz},\ \gamma,\ h,\ a\},
+\qquad \dJ_{zz}=0 .
+\end{equation}
+\pair{Healthy = last solve succeeded, all inputs fresher than
+\SI{0.30}{\second} and (R) the estimate inside \eqref{eq:healthband}; the consumer also rejects frames older than
+\SI{0.35}{\second}. \emph{An unhealthy frame freezes the model and resets the
+confirmation timer}: it can delay a release, never cause one. Each channel is
+low-passed ($\tau=\SI{0.20}{\second}$) and rate-limited
+(\SI{0.60}{\kg\per\second}; \SI{0.080}{\kg\meter\squared\per\second}) so that
+parameter steps become ramps the warm-started solver can follow.}
+{健康 = 上次求解成功、所有输入新于 \SI{0.30}{\second}，且（R）估计值在 \eqref{eq:healthband} 内；消费端还会拒绝超过 \SI{0.35}{\second} 的帧。\emph{不健康帧冻结模型并清零确认计时}：只能推迟释放，不能触发释放。每个通道先低通（$\tau=\SI{0.20}{\second}$）再限速（\SI{0.60}{\kg\per\second}；\SI{0.080}{\kg\meter\squared\per\second}），把参数阶跃变成热启动求解器跟得上的斜坡。}
+
+\bsub{Inner-loop scheduling}{内环调度}
+\pair{The PX4 rate loop is tuned for the bare airframe; a payload lowers its
+bandwidth by $\kappa$. Instead of rewriting PX4 gains, the roll/pitch rate
+command is scaled about the measured rate:}
+{PX4 速率环按空机整定，载荷会让其带宽降低 $\kappa$ 倍。不改 PX4 增益，而是围绕实测角速度缩放滚转/俯仰角速度指令：}
+\needspace{6\baselineskip}\begin{equation}
+\bm\omega'_{\mathrm{cmd}}=\bm\omega+\varsigma(\bm\omega_{\mathrm{cmd}}-\bm\omega),\quad
+\varsigma\to\kappa\ (\text{cap }5.0);\qquad
+\varsigma_{\mathrm{eff}}=\max\Bigl(1,\min_{i\in\{x,y\}}\varsigma_i^{\max}\Bigr),\ |\omega+\varsigma e|\le0.95\,\overline\omega .
+\end{equation}
+\pair{Dead band 0.08 (snapping to 1 and to the cap), low-pass
+\SI{0.5}{\second}, rate limits \SI{4.0}{\per\second} up /
+\SI{1.5}{\per\second} down. The floor at 1 means scheduling can help but never
+hurt.}
+{死区 0.08（并吸附到 1 和上限），低通 \SI{0.5}{\second}，速率限制上升 \SI{4.0}{\per\second}、回落 \SI{1.5}{\per\second}。下限取 1，保证调度只会帮忙、不会帮倒忙。}
+
+\pair{\textbf{Attach-time inertia bootstrap.} At grasp enable the inertia
+alone (not the mass) is floored at the \SI{0.30}{\kg} envelope value,
+$\dJ=\SI{0.0191}{\kg\meter\squared}$ ($\kappa=2.34$); the controller uses
+$\max(\text{floor},\text{estimate})$. In the evaluated configuration the floor
+is held until the release command, then faded over \SI{0.5}{\second}. It only
+raises inertia, never touches the mass channel. Known failure: a missed grasp
+leaves the floor on an empty airframe.}
+{\textbf{吸附时惯量自举。}抓取使能时只把惯量（不是质量）抬到 \SI{0.30}{\kg} 包线对应的地板值 $\dJ=\SI{0.0191}{\kg\meter\squared}$（$\kappa=2.34$）；控制器取地板值与估计值中较大者。评估配置中地板保持到投放指令，再在 \SI{0.5}{\second} 内淡出。它只会抬高惯量，不碰质量通道。已知失效：抓取落空时，空机会一直带着这个地板。}
+
+\bsub{Grasp--release lifecycle}{抓取--释放生命周期}
+\pair{Four things are kept apart: (1) mass, inertia and inner-loop scale follow
+the estimate in every state; (2) the controller owns the lifecycle state
+(carry / pending / accepted / \textsc{unresolved}); (3) the residual
+$\hat{\bm d}$ is reset on an accepted commanded release; (4) task completion
+coincides with acceptance. \emph{Acceptance never sets the mass or inertia.}}
+{四件事分开处理：(1) 质量、惯量、内环缩放在任何状态下都跟随估计；(2) 生命周期状态（吊运 / 待确认 / 已接受 / \textsc{unresolved}）归控制器所有；(3) 有指令的释放被接受时复位残余比力 $\hat{\bm d}$；(4) 任务完成与接受同时发生。\emph{接受释放从不设置质量或惯量。}}
+
+\pair{\textbf{Presence (estimator).} \textsc{loaded} when $\mP>\SI{0.09}{\kg}$
+for \SI{2}{\second}; \textsc{empty} when $\mP<\SI{0.02}{\kg}$ for
+\SI{5}{\second} in quiet flight.
+\textbf{Evidence score} (smooth-step $\sigma$, output low-pass
+\SI{0.25}{\second}):}
+{\textbf{有无载荷（估计器侧）。}$\mP>\SI{0.09}{\kg}$ 持续 \SI{2}{\second} 进入 \textsc{loaded}；平稳飞行中 $\mP<\SI{0.02}{\kg}$ 持续 \SI{5}{\second} 回到 \textsc{empty}。\textbf{空载证据分数}（平滑阶跃 $\sigma$，输出再低通 \SI{0.25}{\second}）：}
+\needspace{6\baselineskip}\begin{equation}
+\sigma(v;a,b)=1-(3\chi^2-2\chi^3),\ \chi=\tfrac{|v|-a}{b-a};\qquad
+\gamma^\star=\sigma(\bar m_P;\,0.015,\,0.060);\qquad
+\textbf{confirm / 确认: }\gamma\ge0.90\ \text{held / 持续 }\SI{1.0}{\second}.
+\label{eq:gamma}
+\end{equation}
+\pair{$\gamma$ is a deterministic score, not a probability; $\gamma^\star>0.9$
+below about \SI{0.024}{\kg}. Two arming policies on this evidence:
+\emph{always-on} (counted through carry) and \emph{command-armed} (counted only
+after the command).}
+{$\gamma$ 是确定性分数，不是概率；约 \SI{0.024}{\kg} 以下时 $\gamma^\star>0.9$。基于这一证据有两种武装策略：\emph{全程开启}（吊运中一直计数）和\emph{指令武装}（只在指令之后计数）。}
+
+\pair{\textbf{\textsc{unresolved}.} No confirmation within \SI{12}{\second}
+of the command: nothing is accepted and $\hat{\bm d}$ is not reset; the vehicle
+brakes to hover along a quintic over $T_b=\SI{3}{\second}$ to
+$\bm p_1=\bm p_0+\tfrac12T_b\bm v_0$ (zero acceleration at both ends).
+\emph{A timeout is not a release.}}
+{\textbf{\textsc{unresolved}。}指令后 \SI{12}{\second} 内未确认：不接受释放、不复位 $\hat{\bm d}$；飞机沿五次多项式在 $T_b=\SI{3}{\second}$ 内制动到 $\bm p_1=\bm p_0+\tfrac12T_b\bm v_0$ 并悬停（两端加速度为零）。\emph{超时不等于释放。}}
+
+\pair{\textbf{Force-balance evidence and loss watchdog.} The IMU specific force
+$f_z$ contains no gravity, so $f_z\approx T/m$ gives a mass that bypasses the
+attitude, the velocity history and the rotational model:}
+{\textbf{力平衡证据与意外脱落看门狗。}IMU 测得的比力 $f_z$ 不含重力，由 $f_z\approx T/m$ 可得一个不经过姿态、速度历史和转动模型的质量：}
+\needspace{6\baselineskip}\begin{equation}
+m_{\mathrm{acc}}=\frac{\bar T}{\max(\bar f_z,\,\SI{1}{\meter\per\second\squared})},\quad
+T=\textstyle\sum_ik_f\omega_i^2;\qquad
+\gamma^\star_{\mathrm{acc}}=\sigma\bigl((m_{\mathrm{acc}}-\mB)^+;0.015,0.060\bigr),
+\label{eq:macc}
+\end{equation}
+\pair{with low-pass \SI{0.5}{\second} on $T$ and $f_z$ and \SI{0.25}{\second}
+on the score; the score starts at 0 and is held while data are staler than
+\SI{0.2}{\second}. Confirmation is the same $\ge0.90$ for \SI{1}{\second}, but
+counts only if (a) a release command is pending, or (b) the watchdog is armed:
+after lift start, $\gamma_{\mathrm{acc}}<0.75$ for \SI{2.0}{\second}; it is
+never disarmed by a rising score and is cleared at the next pickup. An
+acceptance in case (b) is an \emph{uncommanded loss}: zero the payload
+geometry, end the inertia floor, reset the inner-loop scale and $\hat{\bm d}$,
+suppress later planned releases; no gripper command. Weakness: $m_{\mathrm{acc}}$
+scales one-for-one with a $k_f$ error.}
+{$T$ 和 $f_z$ 低通 \SI{0.5}{\second}，分数低通 \SI{0.25}{\second}；分数初值为 0，数据比 \SI{0.2}{\second} 更旧时保持不变。确认条件同为 $\ge0.90$ 持续 \SI{1}{\second}，但只有在以下情况才计数：(a) 有待确认的投放指令；或 (b) 看门狗已武装——起吊开始后 $\gamma_{\mathrm{acc}}<0.75$ 持续 \SI{2.0}{\second}；武装后不因分数上升而撤销，下次抓取时才清除。情况 (b) 下的接受判为\emph{意外脱落}：几何归零、结束惯量地板、复位内环缩放和 $\hat{\bm d}$、取消之后的计划投放；不发夹爪指令。弱点：$m_{\mathrm{acc}}$ 随 $k_f$ 误差一比一偏移。}
+
+\pair{\textbf{Limit of a mass-only lifecycle.} In manoeuvre a low mass bias can
+push $\hat m_P$ below the threshold while loaded (observed with F; smaller with
+R, but the argument does not depend on its size); no rule that admits only
+$\hat m$ can tell this from a release. Command-arming avoids it by not
+counting before the command; the force-balance rule avoids it by not using
+$\hat m$.}
+{\textbf{仅靠质量的生命周期的局限。}机动中质量低偏可能让带载时的 $\hat m_P$ 跌破阈值（在 F 上观察到；R 的偏差更小，但论证不依赖偏差大小）；只看 $\hat m$ 的规则无法把它和真实释放区分开。指令武装靠指令前不计数来避开；力平衡规则靠不使用 $\hat m$ 来避开。}
+
+\begin{center}\small
+\begin{tabularx}{\textwidth}{@{}l l X@{}}
+\toprule
+Threshold 阈值 & Value 取值 & Provenance 来源\\
+\midrule
+presence entry / exit 进入/退出 & $>\SI{0.09}{\kg}$, \SI{2}{s} / $<\SI{0.02}{\kg}$, \SI{5}{s}, quiet & engineering choice 工程选择\\
+evidence score 证据分数 & $\gamma\ge0.90$, \SI{1.0}{s} & engineering choice 工程选择\\
+force-balance score 力平衡分数 & LPF \SI{0.5}{s}/\SI{0.25}{s}, fresh \SI{0.2}{s} & checked by offline replay, frozen before the campaign 离线回放核对，批次前冻结\\
+loss watchdog 看门狗 & $\gamma_{\mathrm{acc}}<0.75$, \SI{2.0}{s}, after lift & frozen before the campaign 批次前冻结\\
+\textsc{unresolved} / brake 制动 & \SI{12}{s} / \SI{3}{s} & engineering choice 工程选择\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\bsub{Reference trajectory}{参考轨迹}
+\needspace{6\baselineskip}\begin{equation}
+x_r=r\sin a,\quad y_r=\tfrac r2\sin2a,\quad z_r=z_h+d_z\sin a,\quad a=wt;\qquad
+\lVert\bm v\rVert_{\max}=\sqrt2\,rw .
+\end{equation}
+\pair{Yaw follows the velocity. Amplitude and heading are blended in with the
+quintic smooth step $10s^3-15s^4+6s^5$, ramp $\ge2.65/w$.}
+{偏航沿速度方向。幅值和航向用五次平滑阶跃 $10s^3-15s^4+6s^5$ 逐步引入，斜坡时长 $\ge2.65/w$。}
+
+\bsub{Execution sequence}{在线执行流程}
+\pair{\begin{enumerate}\setlength\itemsep{0pt}
+\item odometry in; wrench from rotor speeds \eqref{eq:phys};
+\item append to the window, re-seed if rebuilt; solve \eqref{eq:mhe}; (R) health check \eqref{eq:healthband};
+\item update presence and $\gamma$; publish the frame;
+\item controller: check freshness, filter, write $\mT$, $\dJ$, $u_{\mathrm{hover}}$;
+\item evaluate confirmation / timeout / brake;
+\item warm-start and solve \eqref{eq:nmpc}; publish at \SI{50}{\hertz} with throttle inversion and rate scaling.
+\end{enumerate}
+Estimator failure or an out-of-band estimate freezes the model; controller failure falls back to a safe
+action.}
+{\begin{enumerate}\setlength\itemsep{0pt}
+\item 读入里程计；由转速重建力/力矩 \eqref{eq:phys}；
+\item 加入窗口，重建时重新给种子；求解 \eqref{eq:mhe}；（R）健康检查 \eqref{eq:healthband}；
+\item 更新有无载荷判断和 $\gamma$；发布帧；
+\item 控制器：检查新鲜度、滤波，写入 $\mT$、$\dJ$、$u_{\mathrm{hover}}$；
+\item 判断确认 / 超时 / 制动；
+\item 热启动求解 \eqref{eq:nmpc}；以 \SI{50}{\hertz} 发布，做油门反算和角速度缩放。
+\end{enumerate}
+估计器失败或估计越出健康带则冻结模型；控制器失败则退回安全动作。}
+
+
+\end{document}

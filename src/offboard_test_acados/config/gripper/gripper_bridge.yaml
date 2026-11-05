@@ -1,0 +1,35 @@
+# ros_gz_bridge 配置:把夹爪用到的 4 条 gz 话题桥到 ROS 2。用法:
+#   ros2 run ros_gz_bridge parameter_bridge \
+#       --ros-args -p config_file:=<path>/gripper_bridge.yaml
+#
+# 注意 pose/info 的 world 名(gripper_test)要和你实际启动的 world 一致。
+
+# 1) 所有实体位姿 (gz -> ros)。Pose_V 桥成 TFMessage,每个 transform 的
+#    child_frame_id = 实体作用域名(顶层 model 即 model 名)。接近节点据此读
+#    无人机和 box 的位姿。
+- ros_topic_name: "/world/gripper_test/pose/info"
+  gz_topic_name: "/world/gripper_test/pose/info"
+  ros_type_name: "tf2_msgs/msg/TFMessage"
+  gz_type_name: "gz.msgs.Pose_V"
+  direction: GZ_TO_ROS
+
+# 2) attach 命令 (ros -> gz)。std_msgs/String <-> gz.msgs.StringMsg。
+- ros_topic_name: "/gripper/attach"
+  gz_topic_name: "/gripper/attach"
+  ros_type_name: "std_msgs/msg/String"
+  gz_type_name: "gz.msgs.StringMsg"
+  direction: ROS_TO_GZ
+
+# 3) detach 命令 (ros -> gz)。
+- ros_topic_name: "/gripper/detach"
+  gz_topic_name: "/gripper/detach"
+  ros_type_name: "std_msgs/msg/String"
+  gz_type_name: "gz.msgs.StringMsg"
+  direction: ROS_TO_GZ
+
+# 4) 夹爪状态/事件 (gz -> ros)。带仿真时间戳的 ATTACHED/DETACHED 行。
+- ros_topic_name: "/gripper/state"
+  gz_topic_name: "/gripper/state"
+  ros_type_name: "std_msgs/msg/String"
+  gz_type_name: "gz.msgs.StringMsg"
+  direction: GZ_TO_ROS

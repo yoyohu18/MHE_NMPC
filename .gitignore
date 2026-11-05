@@ -1,0 +1,20 @@
+build/
+install/
+log/
+results/
+__pycache__/
+*.pyc
+src/offboard_test_acados/offboard_test_acados/acados_generated_files/
+src/offboard_test_acados/gz_plugins/*/build/
+c_generated_code/
+*.json.bak
+# LaTeX intermediates
+thesis/**/*.aux
+thesis/**/*.log
+thesis/**/*.out
+thesis/**/*.toc
+thesis/**/*.lof
+thesis/**/*.lot
+thesis/**/*.blg
+thesis/**/*.bbl
+thesis/tmp/

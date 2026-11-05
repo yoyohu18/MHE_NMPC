@@ -1,0 +1,204 @@
+%=== CHAPTER TWO ===
+%% Rewritten 2026-09-18: adds inertial-parameter identification, aerial
+%% manipulation and change detection, and restates the gap.
+
+\chapter{Background and Related Work}
+\label{ch:literature}
+\begin{spacing}{1.5}
+\setlength{\parskip}{0.22in}
+
+\section{Model Predictive Control}
+
+MPC repeatedly solves a finite-horizon optimal control problem, applies the first
+input and shifts the horizon forward. Its practical value comes from combining
+prediction, multivariable coordination and explicit constraints within one
+optimisation \cite{rawlings2017mpc,mayne2014mpc}. Linear MPC is mature and
+computationally efficient, but a single linear model is poorly suited to the
+large attitude changes and thrust-direction coupling of a quadrotor. NMPC retains
+the nonlinear dynamics and nonlinear tracking errors directly
+\cite{grune2017nmpc}.
+
+The price is computation. Multiple shooting, sequential quadratic programming,
+Gauss--Newton Hessian approximations and real-time iteration schemes are widely
+used to make NMPC practical \cite{diehl2005rti}. CasADi provides symbolic
+differentiation and a high-level optimisation interface
+\cite{andersson2019casadi}; acados generates efficient optimal-control solvers
+around tailored SQP and QP components \cite{acados,verschueren2022acados}, with
+HPIPM \cite{hpipm} as the quadratic subproblem solver.
+
+\section{Quadrotor NMPC}
+
+A quadrotor is differentially flat under common assumptions \cite{mellinger2011},
+and many successful controllers exploit position and yaw references with a
+cascaded inner attitude loop \cite{lee2010}. NMPC can instead optimise collective
+thrust and body torque against the complete nonlinear rigid-body model, and this
+formulation becomes advantageous as trajectory curvature and operating envelope
+increase \cite{kamel2017linear,foehn2021}.
+
+The controller in this dissertation predicts position, velocity, unit quaternion
+and body rate. The attitude residual is the vector part of the relative
+quaternion, which avoids treating the four quaternion components as independent
+Euclidean coordinates. Input limits represent collective thrust and body-torque
+authority. This formulation is nominally standard; the distinguishing issue is
+that the equilibrium input and the plant parameters change at payload attachment
+and again at release.
+
+\section{Uncertainty and Adaptation in MPC}
+
+Robust MPC protects against bounded uncertainty, while stochastic MPC describes
+uncertainty probabilistically. Both can preserve margins without identifying the
+current plant, but conservatism grows when the uncertainty set must cover both an
+empty and a loaded vehicle. Adaptive MPC instead updates a parameterised model
+online: certainty-equivalent schemes use the current estimate directly,
+set-membership schemes maintain a feasible parameter set, and dual-control
+schemes excite the plant to learn \cite{aswani2013learning,hewing2020learning}.
+
+Learning-based MPC extends this using Gaussian processes, neural networks or
+learned residual models. Data-driven MPC for quadrotors can compensate complex
+aerodynamic effects \cite{torrente2021datadriven,torrente2021}, and neural
+approximations can reduce online computation \cite{salzmann2023neural}; broader
+surveys of learning for control under safety constraints are available
+\cite{brunke}. Those methods are valuable when the uncertainty is poorly
+structured. Payload pickup has stronger prior structure: rigid-body mechanics
+already specifies how mass and attachment geometry enter the equations. The
+present work therefore estimates a small physical parameter set rather than
+learning a general residual map.
+
+A distinct and influential alternative is to decline to identify the payload at
+all, and to absorb its effect as a lumped matched disturbance. The
+$\mathcal{L}_1$-adaptive augmentation of a quadrotor NMPC \cite{hanover2021} is
+the representative of this family, and incremental nonlinear dynamic inversion
+\cite{smeur} is its inner-loop counterpart. Such schemes are robust and require
+no payload model, but their internal quantity is a force or an acceleration, not
+a mass and a moment. They therefore cannot answer the question this dissertation
+poses --- whether a payload is still attached --- because that question is not
+represented in their state. The comparison is implemented here (an additive
+lumped translational and rotational disturbance in the prediction model) but is
+not among the frozen results.
+
+\section{State and Parameter Estimation}
+
+Recursive filters such as the extended Kalman filter propagate a local Gaussian
+approximation. They are efficient and central to flight-state estimation, but
+inequality constraints are not naturally hard constraints and abrupt parameter
+changes violate the local linearisation assumption. MHE estimates a window of
+past states and disturbances by solving a constrained optimisation; it can impose
+bounds such as a physically admissible mass interval and can attribute residuals
+using the same nonlinear model as the controller
+\cite{rawlings2017mpc,rao2003mhe,rao2003}. Recent work learns the MHE weights
+themselves \cite{neuromhe}, which is the principled version of the stage-weight
+question that Chapter~\ref{ch:framework} settles negatively for this problem.
+
+A moving window introduces a trade-off that this work encounters directly. A
+longer horizon improves noise rejection, but the constraint that makes an
+augmented parameter identifiable --- that it is constant across the window ---
+becomes less defensible as the window spans more of the trajectory. The
+implemented estimator uses 20 stages at \SI{0.1}{\second}.
+
+\section{Inertial-Parameter Identification}
+
+That the rigid-body equations are \emph{linear} in a particular set of inertial
+parameters --- mass, first mass moment and the six inertia elements --- is a
+classical result in manipulator identification \cite{atkeson1986}. The present
+work identifies only the first of them online. For a payload grasped on the
+thrust axis the first moment vanishes and the inertia increment reduces to a
+known function of the mass, so the classical set collapses to one scalar; the
+argument of Chapter~\ref{ch:model} is about which measurement channel should
+carry that scalar on a vehicle whose rotational model is less trustworthy than
+its translational one.
+
+Payload-aware estimation for multirotors has previously used force--torque
+sensing, external observers or explicit mass estimators \cite{tomic2017,
+svacha2020, wuest2019, bohm2021}, and slung-load and aerial-manipulation work
+treats the payload as a dynamic subsystem of its own \cite{sreenath2013,
+thomas2014, ollero2022}. In the works reviewed here, whether a payload is
+present is either assumed known or not represented as a quantity of its own.
+This dissertation studies a setting in which the estimator is not told when a
+payload is attached or released.
+
+\section{Change Detection and Event-Triggered Estimation}
+
+Deciding that a plant has changed, from a residual, is the subject of classical
+change-detection theory \cite{basseville1993}, and event-triggered estimation is
+an established response to it \cite{heemels2012}. The predecessor of the present
+system used exactly this structure: a persistent step in the reconstructed
+collective thrust triggered a de-weighting of the pre-event stages of the window.
+
+Chapter~\ref{ch:framework} reports why that structure was retired for this
+problem. A collective-thrust residual cannot distinguish a payload change from a
+trajectory-mode change, a sustained vertical gust, or an aggressive manoeuvre,
+because all of them move the same scalar. Any decision resting on that signal
+alone inherits the ambiguity. The deployed design does not detect the change at
+all: it waits for the estimated mass itself to persist at the bare-airframe value,
+and accepts both the delay and the dependence on mass accuracy that this implies.
+A formal comparison against a CUSUM detector on the same signals, under a matched
+false-alarm constraint, is not performed and is listed among the gaps.
+
+\section{Positioning and Research Gap}\label{sec:lit:gap}
+
+Table~\ref{tab:related} places representative works from the families above
+along the dimensions that matter for this dissertation. The summaries are
+necessarily simplified to the formulation each work emphasises, and a dash means
+that the aspect is not the subject of that work rather than that the work fails
+at it.
+
+\begin{sidewaystable}
+\centering
+\caption[Representative related work compared]{Representative related work compared along the dimensions relevant to
+payload grasp and release. Entries summarise the formulation emphasised in each
+cited work; ``---'' means the aspect is not its subject.}
+\label{tab:related}
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabularx}{\textheight}{@{}>{\raggedright\arraybackslash}p{0.10\textheight} >{\raggedright\arraybackslash}p{0.11\textheight} >{\raggedright\arraybackslash}p{0.10\textheight} >{\raggedright\arraybackslash}p{0.10\textheight} >{\raggedright\arraybackslash}p{0.08\textheight} >{\raggedright\arraybackslash}p{0.09\textheight} >{\raggedright\arraybackslash}p{0.09\textheight} >{\raggedright\arraybackslash}p{0.07\textheight} >{\raggedright\arraybackslash}X@{}}
+\toprule
+\textbf{Work} & \textbf{Payload representation} & \textbf{Signals used} &
+\textbf{Estimated quantities} & \textbf{Attach / release known?} &
+\textbf{Release confirmation} & \textbf{Controller} & \textbf{Evidence} &
+\textbf{Principal limitation for this problem} \\
+\midrule
+$\mathcal{L}_1$-adaptive NMPC \cite{hanover2021} & lumped matched force and torque disturbance & state estimate & disturbance (adaptation law) & not required & --- & NMPC with $\mathcal{L}_1$ augmentation & flight experiments & no payload quantity; presence not represented \\
+Adaptive INDI \cite{smeur} & lumped inner-loop disturbance & angular acceleration, actuator feedback & control effectiveness & not required & --- & incremental attitude control & flight experiments & attitude loop only; no payload quantity \\
+NeuroMHE \cite{neuromhe} & external disturbance wrench & state measurements & disturbance wrench; learned MHE weights & not required & --- & disturbance-compensated tracking & simulation and flight & payload not separated from other disturbances \\
+Online parameter estimation \cite{wuest2019,bohm2021} & vehicle mass, centre of mass and inertia & onboard inertial and actuator signals & mass, CoM, inertia (and actuator parameters) & parameters assumed slowly varying & --- & not the focus & flight data & no release event; not coupled to a predictive controller \\
+IMU-based inertia estimation \cite{svacha2020} & rigid-body inertia & IMU and rotor inputs & inertia & parameters assumed constant & --- & not the focus & experiments & inertia only; no grasp or release \\
+External wrench estimation \cite{tomic2017} & external wrench & inertial and rotor signals & external force and torque; collisions & not required & contact events from the wrench & reflex reaction & flight experiments & payload not represented as mass and inertia \\
+Aerial grasping \cite{mellinger2011} & rigid grasped object & external motion capture & object parameters after grasp & grasp commanded and known & --- & cascaded tracking control & flight experiments & attachment assumed known \\
+This dissertation & centred rigid point mass on a nominal vertical arm & rotor speeds, odometry & composite mass; inertia derived & not given to the estimator & command-armed, estimator-confirmed detachment; force-balance confirmation with loss watchdog & NMPC over PX4 rate loop & software-in-the-loop only & mass collapses in manoeuvre; thrust-map sensitive; no hardware \\
+\bottomrule
+\end{tabularx}
+\end{sidewaystable}
+
+Within the works reviewed here, three aspects receive comparatively little
+attention, and they define the scope of this dissertation.
+
+First, \textbf{a payload model that does not need an event to switch off.}
+Payload-adaptive formulations commonly estimate parameters conditioned on
+attachment, so that some event must tell the model when the payload has gone.
+A model whose payload-dependent terms are continuous functions of an estimated
+quantity, and vanish as that quantity returns to the bare airframe, does not
+need such an event for its dynamics.
+
+Second, \textbf{the difference between a release command and a physical
+detachment.} Systems that grasp and release usually treat the gripper command,
+or a contact sensor, as the moment the payload leaves, and the mismatch between
+the two is rarely measured. This dissertation uses the estimate to separate the
+two once a release has been commanded, and measures both the delay this costs
+and what happens when the same evidence is consulted before any command.
+
+Third, \textbf{an explicit account of the costs.} Confirming a release on the
+estimate delays it; estimating an absolute mass from an absolute thrust makes the
+interface sensitive to a calibration constant; and resting every lifecycle
+decision on one estimate makes the interface only as reliable as that estimate in
+manoeuvre. Chapter~\ref{ch:evaluation} reports these costs rather than asserting
+them to be small.
+
+The dissertation consequently treats estimation and control as one architecture
+rather than two algorithms. Estimation is judged by whether its outputs are
+identifiable and useful for control; control is judged by whether it remains
+consistent with the quantities being estimated, and by whether it knows when it
+does not know.
+
+\end{spacing}
+\newpage

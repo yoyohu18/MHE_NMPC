@@ -1,0 +1,142 @@
+%=== APPENDICES ===
+\begin{appendices}
+\label{cha:appendices}
+
+\chapter{Implemented Optimal Control Problem Configuration}
+\markboth{Appendix A}{}
+
+\begin{spacing}{1.5}
+
+\begin{table}[ht]
+\centering
+\caption{NMPC configuration (evaluated configuration).}
+\begin{tabular}{@{}ll@{}}
+\toprule
+State dimension & 13 \\
+Input dimension & 4 \\
+Runtime parameter dimension & 23 \\
+Prediction stages & $N=20$ \\
+Sampling interval & $\Delta t=\SI{0.05}{\second}$ \\
+Prediction horizon & \SI{1.0}{\second} \\
+Solve rate & \SI{20}{\hertz}; setpoints published at \SI{50}{\hertz} \\
+Integrator & Explicit RK4 \\
+NLP method & Full SQP with merit backtracking \\
+QP solver & Partial-condensing HPIPM \\
+Hessian & Gauss--Newton \\
+Thrust box & $[\SI{1.27}{\newton},\ \SI{31.35}{\newton}]$ (actuator envelope) \\
+Torque box & $\pm\SI{0.5}{\newton\meter}$ roll/pitch, $\pm\SI{0.2}{\newton\meter}$ yaw \\
+Bryson tolerances (state) & $0.1$\,m, $0.3$\,m/s, $0.05$, $0.3$\,rad/s \\
+Bryson tolerances (input) & $2.0$\,N, $0.5$\,N\,m, $0.2$\,N\,m \\
+Terminal scaling & $20\times$ pos., $1\times$ vel., $2\times$ att., $0.2\times$ rate \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[ht]
+\centering
+\caption{MHE configuration. The full-state estimator is the evaluated
+configuration of the cohort and the release campaign; the reduced estimator is
+the deployed default since 5 November 2026; the prior-free column lists the
+values taken by the full-state ablation of Section~\ref{sec:frame:health}.}
+\small
+\begin{tabularx}{\textwidth}{@{}p{0.27\textwidth} X X p{0.17\textwidth}@{}}
+\toprule
+ & \textbf{Full-state (evaluated)} & \textbf{Reduced (deployed)} & \textbf{Prior-free ablation} \\
+\midrule
+Model selection$^{a}$ & \texttt{full} (library default) & \texttt{reduced} (entry-point default) & \texttt{full} \\
+State dimension & 14 ($x$, $\mT$) & 4 ($\bm v$, $\mT$) & 14 \\
+Process-noise dimension & 13 (physical states only) & 3 (velocity) & 13 \\
+Runtime parameter dimension & 7 (wrench; lagged $\dJ$; $c_x=c_y=0$) & 5 (measured unit quaternion; $\Tphys$) & 7 \\
+Measurement residual & 13 (\eqref{eq:mheresid}) & 3, velocity (\eqref{eq:redresid}) & 13 \\
+Weights & \eqref{eq:Wy}--\eqref{eq:W0} & \eqref{eq:Wred} (velocity and mass blocks of the former) & as full-state \\
+Estimation stages / interval & $N=20$ / \SI{0.1}{\second} & same & same \\
+Mass box$^{b}$ & $[0.95\,\mB,\ \SI{5.0}{\kg}]$ & $[0.70\,\mB,\ \SI{5.0}{\kg}]$ & $[\SI{0.2}{\kg},$ $\SI{5.0}{\kg}]$ \\
+Mass-health band & none & \eqref{eq:healthband}, $[\SI{1.964}{\kg},\SI{2.464}{\kg}]$; recover after 10 solves & none \\
+Mass arrival $\sigma$ & \SI{3.16}{\kg} & \SI{3.16}{\kg} & \SI{1000}{\kg} \\
+Initial iterate & window force balance \eqref{eq:winbal} & same & same \\
+Estimator inertia increment$^{c}$ & lagged, \eqref{eq:Afrozen} (entry-point default; library default omitted) & none & lagged \\
+Mass-only selection$^{d}$ & on (entry-point default; library default off) & required & same \\
+Stage weighting $\beta_j$ & residual-triggered de-weighting enabled, uniform in effect (Section~\ref{sec:frame:beta}) & same, rebuilt on the reduced blocks & same \\
+Solver failure & re-anchor after 5 consecutive failures; seed adopted as estimate & re-initialise after 5; last valid estimate held, frame unhealthy & as full-state \\
+Output filter & first order, $\tau=\SI{0.25}{\second}$ & same & same \\
+NLP / QP method & Full SQP / partial-condensing HPIPM & same & same \\
+\bottomrule
+\end{tabularx}
+\\[3pt]
+{\footnotesize Switches: $^{a}$\,\texttt{MHE\_MODEL\_VARIANT};
+$^{b}$\,reduced: \texttt{MHE\_REDUCED\_M\_MIN}, \texttt{MHE\_REDUCED\_M\_MAX};
+$^{c}$\,\texttt{MHE\_DJ\_EXT=1}; $^{d}$\,\texttt{MHE\_ESTIMATE\_MOMENT=0}.}
+\end{table}
+
+\begin{table}[ht]
+\centering
+\caption{Payload interface, lifecycle and task settings (evaluated configuration).}
+\small
+\begin{tabularx}{\textwidth}{@{}p{0.40\textwidth} X@{}}
+\toprule
+Frame fields & $\mT$, $\dJ_{\mathrm{diag}}$, $J_{\mathrm{diag}}$, $\gamma$, health, solution age (offset fields unused) \\
+Vertical-arm prior $r_z$ & \SI{-0.27}{\meter} nominal, both optimisers (realised \SIrange{0.25}{0.30}{\meter}) \\
+Input freshness / solution freshness & \SI{0.30}{\second} / \SI{0.30}{\second} \\
+Consumer receive-age limit & \SI{0.35}{\second} \\
+Controller-side filter $\tau$ & \SI{0.20}{\second} \\
+Slew limits ($\mT$ / $\dJ$) & $0.60$\,kg/s / $0.080$\,kg\,m$^2$/s \\
+Evidence-score mode & mass only (no inertia factor) \\
+Payload-mass score thresholds & $(0.015,0.060)$\,kg \\
+Confirmation & $\gamma\ge0.90$ held \SI{1.0}{\second} \\
+Presence entry / exit & $\mP>\SI{0.09}{\kg}$ for \SI{2}{\second} / $\mP<\SI{0.02}{\kg}$ for \SI{5}{\second} in quiet flight \\
+Quiet-flight test & $\lVert\bm\omega\rVert\le\SI{0.15}{\radian\per\second}$, $\lVert\bm v_{xy}\rVert\le\SI{0.20}{\meter\per\second}$ \\
+\textsc{unresolved} timeout / brake duration & \SI{12}{\second} / \SI{3}{\second} \\
+Body-rate scale cap / dead band & $5.0$ / $0.08$ \\
+Body-rate scale $\tau$ / rise / recover & \SI{0.5}{\second} / $4.0$\,s$^{-1}$ / $1.5$\,s$^{-1}$ \\
+Body-rate headroom fraction / hard limit & $0.95$ / \SI{2.0}{\radian\per\second} \\
+Attach inertia bootstrap & envelope \SI{0.30}{\kg} ($\dJ=\SI{0.0191}{\kg\meter\squared}$, $\kappa=2.34$); fade \SI{0.5}{\second}; hold until command$^{\dagger}$ \\
+Residual specific force$^{\dagger}$ & $a=10$, $\omega_c=\SI{0.5}{\radian\per\second}$, nominal mass $\hat m$ \\
+Relative alignment$^{\dagger}$ & tolerance \SI{0.012}{\meter}, wait $\le\SI{4}{\second}$ \\
+Figure-eight yaw smoothing$^{\dagger}$ & on \\
+Controller offset compensation & off ($\cvec\equiv\bm 0$) \\
+Release & at the figure-eight tip after \SI{45}{\second} loaded carry \\
+\midrule
+\multicolumn{2}{@{}p{0.95\textwidth}@{}}{\footnotesize $^{\dagger}$\,Set explicitly by
+the cohort driver; off at the experiment entry points. The geometry-release mode,
+moment-based offset and release options and moment over-range re-anchoring
+appear in launch records but are inert in the mass-only form; the residual event
+trigger is active but rarely changes the stage weights (Section~\ref{sec:frame:beta}).} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+\end{spacing}
+
+\clearpage
+\chapter{Experiment Record Template}
+\markboth{Appendix B}{}
+
+\begin{spacing}{1.5}
+Each run stores the following metadata with its log, so that any reported figure
+can be regenerated from retained data:
+\begin{enumerate}
+\item code identity --- repository revision, a frozen patch of uncommitted
+changes and an archive of untracked files, with an explicit verdict on whether an
+exact-commit claim is permitted --- together with the build timestamp and
+generated-solver identity;
+\item the \emph{resolved value} of every environment switch that affects
+behaviour --- not only those explicitly set, since a default that is never
+written to disk is the commonest way for a batch to become unattributable;
+\item airframe mass and inertia calibration, rotor coefficients and the fixed
+actuator limits;
+\item payload mass and attachment geometry for offline scoring, together with
+evidence that neither reached the adaptive path;
+\item trajectory parameters, grasp and release phase, and random seed;
+\item both horizons, weights, bounds and solver options;
+\item topic rates and measured end-to-end latency;
+\item the complete lifecycle event trace, with timestamps for every state
+transition and every confirmation;
+\item termination reason, solver status sequence and constraint activity.
+\end{enumerate}
+
+Results tables carry one row per run in the retained data, not only an aggregate,
+so that failed runs cannot disappear during manual selection. Runs terminated by
+numerical failure remain in the denominator; any manual exclusion must name a
+pre-declared logging or infrastructure fault.
+\end{spacing}
+
+\end{appendices}

@@ -1,0 +1,209 @@
+%=== CHAPTER ONE ===
+%% Rewritten 2026-10-30 for the 14-state mass-only interface; 2026-11-05: the
+%% deployed estimator is the reduced velocity--mass MHE (contribution 2).
+
+\chapter{Introduction}
+\label{ch:introduction}
+\begin{spacing}{1.5}
+\setlength{\parskip}{0.22in}
+
+\section{Background}
+
+Quadrotors are increasingly used for inspection, transport and delivery because
+they can hover and manoeuvre in confined three-dimensional environments. Their
+agility, however, is obtained from a light airframe with limited thrust and
+torque margins. A package pickup can therefore change the vehicle dynamics on the
+same time scale as the control loop. The total mass changes the
+thrust-to-acceleration map, and a load hanging below the airframe multiplies the
+rotational inertia that the attitude loop must move.
+
+Model predictive control is attractive for this problem because it predicts
+future motion while handling actuator limits and coupled dynamics explicitly
+\cite{rawlings2017mpc,mayne2014mpc}. For a quadrotor the relevant equations are
+nonlinear and the attitude evolves on the unit-quaternion manifold; nonlinear MPC
+therefore avoids the loss of fidelity caused by repeated linearisation over
+aggressive motion \cite{grune2017nmpc,kamel2017linear}. Its performance
+nevertheless depends on the model supplied to the prediction. If the controller
+continues to use the empty-airframe parameters after grasping a parcel, even a
+numerically converged optimisation solves the wrong problem.
+
+This dissertation couples moving horizon estimation with nonlinear model
+predictive control. MHE estimates states and parameters by optimising over a
+recent window of measurements while enforcing the system dynamics and physical
+bounds \cite{rao2003mhe}. Within that window the estimator identifies a single
+payload-dependent scalar, the composite mass, and from it the controller
+reconstructs every payload-dependent term in its own model.
+
+\section{Problem Statement}
+
+Consider a quadrotor that follows a three-dimensional figure-eight path, grasps
+a payload from above, transports it and releases it at a selected phase of the
+trajectory. The controller has no access to the true payload parameters. Only
+ordinary onboard flight signals are available: odometry, attitude, body rate and
+rotor-speed telemetry.
+
+Two model errors appear at attachment:
+\begin{enumerate}
+\item the composite mass changes abruptly, shifting the hover thrust and the
+translational acceleration gain;
+\item the payload lever arm increases roll and pitch inertia several-fold,
+reducing effective inner-loop bandwidth.
+\end{enumerate}
+At release both changes occur in the opposite direction. The payload is grasped
+on the thrust axis, so the composite centre of mass moves only vertically and no
+standing trim moment arises; a residual offset left by imperfect alignment is
+treated as an unmodelled disturbance (Chapter~\ref{ch:model}).
+
+The central research question is:
+
+\begin{quote}
+Can a quadrotor identify its payload online from its ordinary flight signals
+alone --- through grasp, loaded manoeuvre and release --- and feed that estimate
+to a constrained predictive controller consistently enough to remain a
+well-tracking controller throughout?
+\end{quote}
+
+Release adds one decision that the continuous model does not make by itself:
+when the controller may accept that a delivery has happened. Accepting a release
+declares the task complete and resets auxiliary estimates learned against the
+loaded vehicle; it does not change the model's mass or inertia, which follow the
+estimate continuously. The controller in this work issues the release command
+itself, but a command is not a detachment --- a gripper can be slow to open or
+can jam. The dissertation therefore studies \emph{estimator-confirmed
+detachment}: once a release has been commanded, the release is accepted only when
+the estimate shows that the payload has actually gone. This costs a confirmation
+delay, and it is evaluated against accepting at the command, under nominal
+release and under a release whose physical detachment is held back. It is not a
+detector of load loss in general: a load lost without any command is outside what
+the evaluated mechanism can establish.
+
+This question has a specific technical obstacle, which
+Chapter~\ref{ch:model} addresses and which shapes the whole design. The inertia
+increment is several times larger, relative to its bare-airframe value, than the
+mass increment, so the rotational channel carries a strong payload signature ---
+but it is also the channel this platform models least well. An estimator that
+lets the mass enter its rotational model will use the mass to absorb rotational
+model error. The design adopted here identifies the composite mass on the
+translational channel only, derives the inertia increment from it by rigid-body
+algebra, and accepts --- and measures --- the loss of information that this
+costs in manoeuvre.
+
+\section{Research Objectives}
+
+The dissertation has five objectives:
+\begin{enumerate}
+\item derive a consistent quadrotor model with explicit payload mass and inertia
+entry points, and reduce a centred rigid payload to one online degree of freedom
+from which every payload-dependent term follows (Chapter~\ref{ch:model});
+\item formulate a moving horizon estimator that identifies the composite mass
+from a wrench reconstructed from measured rotor speeds, on the translational
+channel, while keeping the mass from absorbing rotational model error
+(Chapters~\ref{ch:model} and~\ref{ch:framework});
+\item formulate a predictive controller whose prediction model, input baseline
+and inner-loop command scaling are updated continuously from one health-gated
+estimate (Chapter~\ref{ch:framework});
+\item define a release lifecycle that separates the release command from the
+physical detachment by gating release acceptance on estimator evidence, and that
+holds an unconfirmed release as \textsc{unresolved} rather than assuming it
+complete (Chapter~\ref{ch:framework});
+\item evaluate the complete interface in software-in-the-loop simulation with a
+randomised, fully reported cohort and targeted ablations, and characterise where
+it fails (Chapter~\ref{ch:evaluation}).
+\end{enumerate}
+
+\section{Scope}
+
+The work covers simulation and software-in-the-loop validation of a rigidly
+attached parcel grasped on the thrust axis. Airframe inertia, rotor geometry and
+the thrust and
+yaw-reaction coefficients are treated as calibrated plant quantities. The
+calibrated airframe mass appears in the rigid-body model, in the derived payload
+mass $\mP=(\mT-\mB)^{+}$ and in offline scoring.
+
+The information boundary is stated precisely, because a looser statement would be
+false. \emph{No task-specific payload mass enters the estimator or the
+controller, and no attach or release notification enters the estimator.} The
+controller uses its own release command only to start the confirmation timeout,
+to end the attach-time inertia floor, to decide whether an acceptance also resets
+the residual specific force, and --- under the command-armed and force-balance
+policies --- to arm the confirmation count. The command never sets the model's mass or inertia. One mass-valued platform
+constant does remain in the closed loop --- the airframe's \SI{0.30}{\kg} payload
+envelope, used for an attach-time inertia floor --- and it is disclosed as a
+specification of the airframe rather than as
+information about the parcel. Chapter~\ref{ch:model} states exactly where it
+appears.
+
+The scope does not include eccentric grasps beyond the gripper's alignment
+tolerance, deformable or sloshing loads, cable-suspended payload dynamics, wind,
+motor failure, hardware flight, or a formal closed-loop stability proof for the estimator--controller
+interconnection. All system-level evidence is from PX4/Gazebo
+software-in-the-loop simulation. These limits are revisited in
+Chapter~\ref{ch:conclusion}.
+
+\section{Contributions}
+
+The contributions are:
+\begin{enumerate}
+\item \textbf{A single-degree-of-freedom parameter structure for a centred rigid
+payload.} For a payload grasped on the thrust axis, the roll and pitch inertia
+increment is the reduced mass times the square of a nominal vertical arm, so the
+composite mass is the only payload quantity to be identified online; the inertia
+follows from it and vanishes with it, with no event needed to remove it
+(Chapter~\ref{ch:model}).
+
+\item \textbf{A mass estimator driven by a reconstructed physical input that
+does not integrate the rotational dynamics.} The estimator is fed the thrust
+reconstructed from measured rotor speeds rather than the controller's intended
+input, which would make the mass unobservable by construction. In its deployed
+form it keeps only the world-frame velocity and the composite mass as states and
+takes the measured attitude as a known input, so that errors of the poorly
+modelled rotational channel have no path to the mass; a mass-health check flags
+an estimate that leaves a physical band instead of hiding it behind a hard bound.
+Replayed on the 312 recorded campaign flights, it had a smaller loaded mass error
+than the full-state estimator in every nominal flight. The evaluation campaigns
+were flown with that earlier full-state form, which separated the channels more
+weakly by carrying the payload inertia as a parameter lagged by one solve; the
+lagged treatment halved the loaded mass bias in manoeuvre relative to omitting
+the inertia (Chapters~\ref{ch:model}, \ref{ch:framework} and
+Sections~\ref{sec:eval:amode}, \ref{sec:eval:reduced}).
+\draftnote{Add the closed-loop F/R result to this contribution once
+mhe\_variant\_ab\_20261105\_181925 is analysed.}
+
+\item \textbf{A continuous estimate-driven controller interface with a
+command-armed, estimator-confirmed release lifecycle.} One health-gated frame
+updates the controller's prediction model, input baseline and inner-loop scaling
+continuously; release acceptance is a separate decision, taken on estimator
+evidence once a release has been commanded. In the evaluation it never accepted a
+release while a delayed payload was still attached, and, unlike an always-on
+variant of the same rule, it produced no false acceptance during high-speed
+carry. A variant on independent force-balance evidence, enabled additionally by
+an airborne-load watchdog, also detected every load lost without a command in
+the evaluation, at the price of sensitivity to the thrust map
+(Chapter~\ref{ch:framework} and Sections~\ref{sec:eval:results}
+and~\ref{sec:eval:campaign}).
+
+\item \textbf{A software-in-the-loop evaluation with randomised blocks, complete
+reporting, ablations and failure cases.} A frozen cohort of $120$ flights and a
+second frozen campaign of $312$, every flight reported, together with ablations of the residual specific force and the
+inertia treatment and an account of the failure modes --- in particular the
+collapse of the mass estimate under sustained manoeuvre and the false
+acceptances it causes in an always-on lifecycle (Chapter~\ref{ch:evaluation}).
+\end{enumerate}
+
+\section{Dissertation Organisation}
+
+Chapter~\ref{ch:literature} reviews predictive control, online estimation,
+inertial-parameter identification and payload-adaptive aerial control, and
+positions this work against representative approaches.
+Chapter~\ref{ch:model} derives the model and the payload parameter structure, and
+is where the one-degree-of-freedom reduction and the channel assignment of the
+mass are developed in full.
+Chapter~\ref{ch:framework} presents the coupled architecture, the numerical form
+of both optimal control problems, the continuous payload interface and the
+release lifecycle. Chapter~\ref{ch:evaluation} describes the implementation and
+reports the frozen experimental campaign, including the conditions under which
+the interface fails. Chapter~\ref{ch:conclusion} answers the research objectives
+against that evidence and states what remains open.
+
+\end{spacing}
+\newpage

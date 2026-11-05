@@ -1,0 +1,7 @@
+proximity_gripper_node:
+  ros__parameters:
+    r_xy: 0.030
+    attach_dwell_sec: 0.0
+    attach_r_min: 0.0
+    h_min: 0.15
+    h_max: 0.45

@@ -1,0 +1,57 @@
+%=== SYMBOLS ===
+\chapter*{\centering Symbols}
+\markboth{Symbols}{}
+\addcontentsline{toc}{chapter}{Symbols}
+
+\begin{spacing}{1.5}
+\setlength{\parskip}{0.1in}
+\begin{table}[ht]
+\centering
+\small
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Symbol} & \textbf{Definition} \\
+\midrule
+\multicolumn{2}{@{}l}{\textit{States and inputs}} \\
+$\bm{p},\bm{v}$ & Position and velocity in the world frame (ENU) \\
+$\bm{q}$ & Hamilton unit quaternion, scalar component first \\
+$\bm{\omega}$ & Body angular velocity (FLU body frame) \\
+$T,\bm{\tau}$ & Collective thrust and body torque \\
+$\phi,\theta$ & Roll and pitch angles (ZYX Euler convention) \\
+\midrule
+\multicolumn{2}{@{}l}{\textit{Payload parameters}} \\
+$\mB,\mP,\mT$ & Bare-airframe, payload and composite mass \\
+$\rp=[0,0,r_z]$ & Payload attachment point in the body frame (centred grasp) \\
+$r_z$ & Vertical arm of the payload below the rotor plane (weak prior) \\
+$\rc$ & Composite centre of mass in the body frame, $\rc=(\mP/\mT)\rp$ \\
+$\cvec$ & Horizontal CoM offset; not modelled, held at $\bm 0$ \\
+$\mu$ & Reduced mass, $\mu=\mB\mP/\mT$ \\
+$\Jb,\Jt$ & Bare-airframe and composite inertia tensors \\
+$\dJ$ & Payload-induced roll/pitch inertia increment, $\dJ=\mu r_z^2$ \\
+$\kappa$ & Inertia ratio $(J_{xx}+\dJ)/J_{xx}$ \\
+\midrule
+\multicolumn{2}{@{}l}{\textit{Reconstructed input and actuator model}} \\
+$\Tphys,\tauphys$ & Wrench reconstructed from rotor speeds \\
+$k_f,k_m$ & Rotor thrust and yaw-reaction coefficients \\
+$\eta$ & Normalised throttle command \\
+$k_d$, $g$ & Linear drag coefficient, gravitational acceleration \\
+\midrule
+\multicolumn{2}{@{}l}{\textit{Estimator and controller}} \\
+$N,\Delta t$ & Horizon length and sampling interval \\
+$W_y,W_w,W_0$ & MHE measurement, process-noise and arrival weights \\
+$\beta_j$ & Per-stage weighting factor; $\lambda$ forgetting factor \\
+$Q,R,P$ & NMPC stage-state, input and terminal weights \\
+$L_{(\cdot)}$ & Bryson tolerance scale for the corresponding residual \\
+$u_{\mathrm{hover}}$ & Parameter-dependent equilibrium input baseline \\
+$\hat{\bm d}$ & Residual specific force estimated by the controller ($\mathcal{L}_1$-type) \\
+\midrule
+\multicolumn{2}{@{}l}{\textit{Lifecycle}} \\
+$\gamma$ & No-payload evidence score, \eqref{eq:gamma} \\
+$\sigma(v;a,b)$ & Cubic smooth-step indicator, \eqref{eq:smoothstep} \\
+$\varsigma$ & Body-rate command scale \\
+\bottomrule
+\end{tabular}
+\end{table}
+\end{spacing}
+\newpage
+%=== END OF SYMBOLS ===

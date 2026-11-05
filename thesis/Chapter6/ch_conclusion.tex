@@ -1,0 +1,248 @@
+%=== CHAPTER SIX ===
+%% Rewritten 2026-10-30 against the 14-state mass-only interface; 2026-11-05:
+%% objective 2 distinguishes the full-state (campaign) and reduced (deployed) estimator.
+%% 2026-11-03: findings reorganised by research objective (answer / evidence /
+%% boundary / not established); future work reduced to four ranked items.
+%% 2026-11-05: release-campaign results (312 flights) added to objectives 3-5.
+
+\chapter{Conclusion and Future Work}
+\label{ch:conclusion}
+\begin{spacing}{1.5}
+\setlength{\parskip}{0.22in}
+
+\section{Summary}
+
+This dissertation treated payload grasp and release on a quadrotor as one
+estimation-and-control problem. Chapter~\ref{ch:model} reduced a centred rigid
+payload to a single online parameter, the composite mass, from which the roll
+and pitch inertia increment follows, and assigned the identification of that
+mass to the translational channel. Chapter~\ref{ch:framework} built a
+moving-horizon estimator driven by a wrench reconstructed from rotor speeds, a
+predictive controller updated continuously from one health-gated estimate, and a
+release lifecycle in which acceptance of a release is gated on evidence ---
+from the estimator, or from an independent force balance. Chapter~\ref{ch:evaluation}
+evaluated the system in PX4/Gazebo software-in-the-loop simulation with a frozen
+cohort of $120$ flight attempts, two smaller frozen ablations and a second frozen
+campaign of $312$ flights. The findings below answer the five research
+objectives against that evidence.
+
+\section{Principal Findings}
+
+\paragraph{Objective 1 --- a single-parameter payload structure.}
+\begin{itemize}
+\item \textbf{Answer.} For a rigid payload on the thrust axis, the roll and pitch
+inertia increment is $\mu r_z^2$, a function of the composite mass and a nominal
+arm, so the composite mass is the only payload quantity that needs online
+identification; the inertia follows from it and vanishes with it.
+\item \textbf{Evidence.} The derivation of Section~\ref{sec:model:payload}; the
+structure is implemented in both optimisers and used in every reported flight.
+\item \textbf{Boundary.} A centred grasp within the alignment tolerance, a
+point-mass payload, and a nominal arm whose realised value varies by up to
+$-14$ to $+23$ percent in inertia (Section~\ref{sec:model:approx}).
+\item \textbf{Not established.} Eccentric grasps; and whether estimating the
+inertia directly would perform better or worse, which was not compared.
+\end{itemize}
+
+\paragraph{Objective 2 --- identifying the mass.}
+\begin{itemize}
+\item \textbf{Answer.} The estimator identifies the composite mass accurately in
+loaded hover, but under sustained manoeuvre the estimate is biased low and
+periodically collapses toward the bare airframe. Both statements describe the
+full-state estimator with which the campaigns were flown. Carrying the payload
+inertia in it as a lagged parameter reduces that bias without removing it; the
+deployed reduced estimator, which does not integrate the rotational dynamics,
+removes most of it in replay.
+\item \textbf{Evidence.} In the frozen cohort the per-flight loaded-hover error
+lay between \SI{-0.44}{\percent} and \SI{-0.10}{\percent}; the loaded
+figure-eight bias had medians of \SI{-1.0}{\percent} at
+\SI{2}{\meter\per\second} and \SI{-4.1}{\percent} and \SI{-3.3}{\percent} at
+\SI{4}{\meter\per\second}, with dips to the mass lower bound and a median
+collapse fraction of $0.38$ for the lighter payload
+(Section~\ref{sec:eval:estimation}). In a sixteen-flight comparison the lagged
+inertia reduced the loaded bias from \SI{-8.9}{\percent} to \SI{-4.0}{\percent}
+(Section~\ref{sec:eval:amode}). Replayed on the 312 campaign flights, the reduced
+estimator lowered the median loaded mass error from \SI{0.036}{\kg} to
+\SI{0.013}{\kg}, smaller in every one of the 264 nominal flights, and returned to
+the empty value after every release, where the full-state estimate stayed about
+\SI{2}{\percent} low in 57 flights at \SI{4}{\meter\per\second}
+(Section~\ref{sec:eval:reduced}).
+\draftnote{Objective 2: add the closed-loop F/R evidence.}
+\item \textbf{Boundary.} Simulated rotor speeds are exact and the plant uses the
+thrust law the estimator inverts; the shortened arm; payloads of
+\SIrange{0.15}{0.30}{\kg}.
+\item \textbf{Not established.} The full cause of the collapse; the reduced
+estimator under realistic attitude noise, which the simulator's odometry does not
+exercise; the effect of a thrust-coefficient error, which is known only analytically
+(Section~\ref{sec:eval:thrustcal}); and the advantage of the window seed, whose
+comparison was not run.
+\end{itemize}
+
+\paragraph{Objective 3 --- a continuously updated controller.}
+\begin{itemize}
+\item \textbf{Answer.} The controller completed every eligible flight without
+divergence while consuming the estimate continuously. The residual specific force
+improves tracking but does not improve the mass estimate or change the
+lifecycle. The held inertia floor protects the inner loop through the collapse,
+but for that reason the cohort cannot show the effect of estimate-driven
+inner-loop scheduling on its own.
+\item \textbf{Evidence.} No eligible cohort flight diverged
+(Table~\ref{tab:attempts}). In the $48$-flight ablation the residual reduced
+loaded figure-eight RMSE by \SIrange{22}{31}{\percent} and removed a mean
+vertical sag of up to \SI{44}{\milli\meter}, with no difference in mass bias,
+confirmation delay or carry-phase confirmations
+(Section~\ref{sec:eval:l1ablation}). The inner-loop scale stayed at the floor
+value of $2.34$ through every loaded figure-eight
+(Section~\ref{sec:eval:opslimit}). In the release campaign, with the lifecycle
+and inner loop shared, the MHE controller had a smaller loaded RMSE than a
+fixed-parameter controller in all $24$ pairs, by \SIrange{0.04}{0.14}{\meter}
+at the median, and no consistent difference in carry from an $\mathcal{L}_1$
+controller that uses the residual alone (Section~\ref{sec:eval:camp:ctrl}).
+\item \textbf{Boundary.} The inertia ratio at the shortened arm stays below the
+scaling cap; with the earlier, longer arm it would not.
+\item \textbf{Not established.} A tracking benefit of estimating the mass over
+the lumped residual alone --- the only consistent difference was a smaller
+post-release peak at \SI{2}{\meter\per\second}, of \SIrange{6}{17}{\milli\meter};
+any benefit over incremental dynamic inversion or full $\mathcal{L}_1$-adaptive
+NMPC, which were not run; and the contribution of the continuous inner-loop
+scaling, which the held floor masked during carry and which all three
+controllers of the comparison shared.
+\end{itemize}
+
+\paragraph{Objective 4 --- separating a release command from a physical
+detachment.}
+\begin{itemize}
+\item \textbf{Answer.} Gating release acceptance on evidence separates
+``the command was issued'' from ``the payload has left''. On the mass evidence,
+only consulting it after the command --- \emph{command-armed,
+estimator-confirmed detachment} --- is sound; consulting it throughout carry is
+not, because the mass evidence fails in manoeuvre. With independent
+force-balance evidence, which does not pass through the mass estimate, the rule
+can in addition be enabled by a watchdog armed on airborne load: it then also
+detects a load lost without a command, without false acceptances in carry. That
+rule's weakness is the thrust map, not the manoeuvre.
+\item \textbf{Evidence.} Every eligible release was accepted,
+\SIrange{2.3}{3.2}{\second} after physical detachment. Under delayed detachment
+the command-triggered arm accepted early in $24$ of $24$ flights, about
+\SI{4}{\second} early, and the evidence-gated arms in none of $47$. The
+always-on rule accepted $114$ releases that had not happened, in $20$ of $32$
+flights at \SI{4}{\meter\per\second}; the command-armed rule accepted none in its
+$23$ flights and confirmed real detachments no later
+(Sections~\ref{sec:eval:completion}--\ref{sec:eval:unsignaled}). In the
+release campaign the force-balance rule accepted no release during carry in any
+of $240$ flights ($228$ with the watchdog armed), none early in $36$
+delayed-detachment flights, against $36$ of $36$ for command-triggered
+acceptance, and confirmed real detachments \SIrange{1.9}{2.5}{\second} after
+they occurred. It detected $24$ of $24$ uncommanded losses
+\SIrange{1.8}{2.5}{\second} after detachment, resetting the payload geometry
+and inner-loop scale each time, and accepted none of $24$ releases with a jammed
+gripper, all of which ended in a braked hover (Section~\ref{sec:eval:campaign}).
+\item \textbf{Boundary.} For the command-armed rule, a release command must
+exist. For both rules, the detachment delay tested was \SI{4}{\second}. The
+force-balance rule assumes a thrust map accurate to better than
+\SI{10}{\percent}: overestimated by that much it missed every release, safely;
+underestimated by as much it read the lighter payload as absent, so that the
+loss watchdog never armed (Section~\ref{sec:eval:camp:thrust}).
+\item \textbf{Not established.} A tracking or survival advantage of
+evidence-gated acceptance --- none was detected, and none was expected, since the
+model's mass follows the estimate in every arm; what the delayed-detachment
+experiment shows is lifecycle correctness. Also not established: uncommanded
+loss under the mass-evidence rules, which was not run; the force-balance rule
+under delayed detachment with a thrust-map error, where it is expected to accept
+early; detection of partial loss; and its performance relative to an optimised
+change detector.
+\end{itemize}
+
+\paragraph{Objective 5 --- evaluation and its scope.}
+\begin{itemize}
+\item \textbf{Answer.} The interface was evaluated with randomised blocks,
+complete reporting of every attempt, two targeted ablations and an explicit
+account of its failure modes.
+\item \textbf{Evidence.} $120$ attempts, $118$ eligible, two exclusions both
+explained (Table~\ref{tab:attempts}); a second campaign of $312$ attempts, all
+eligible, with no replacement flight needed (Section~\ref{sec:eval:camp:design});
+the evidence sources and their standing are listed in Table~\ref{tab:evidence}.
+\item \textbf{Boundary.} All system-level evidence is software-in-the-loop.
+\item \textbf{Not established.} Hardware validity; a comparison with
+incremental dynamic inversion or with a change detector under a matched
+false-alarm constraint; and the designed estimator-side thrust-map, partial-loss
+and window-seed experiments, which were not run
+(Section~\ref{sec:eval:notrun}).
+\end{itemize}
+
+\section{Limitations}
+
+The limitations that bound the findings are collected here once. All
+system-level evidence is software-in-the-loop, with exact rotor speeds and a plant
+that generates thrust by the same law the estimator inverts. The attachment is
+rigid and the grasp centred; eccentric grasps, gripper compliance, pendulum
+modes and flexible loads are not modelled, and a sustained vertical gust is
+intrinsically confounded with a payload change on a collective-thrust residual.
+Every flight uses one gripper geometry, whose nominal arm differs from the
+realised one by an unmeasured amount. The attach-time inertia floor is armed
+whether or not the grasp succeeds. Under the mass-evidence rules it is ended
+only by the release command, so a load lost without a command leaves it in
+place; under the force-balance rule a detected loss ends it, but detection
+depends on the thrust map. The release command is not gated on estimator
+health. The evaluated configuration includes settings that are not
+the defaults of the experiment entry points, and the results are claims about
+that configuration.
+
+\section{Future Work}
+
+The following directions are ranked by how much they would change what can be
+claimed.
+
+\begin{enumerate}
+\item \textbf{Manoeuvre-robust mass estimation.} Every weakness of the lifecycle
+follows from the collapse of the loaded estimate in manoeuvre. Calibrating the
+airframe's rotational model --- inertia, rotor-drag moment and torque bias ---
+would reduce the error that reaches the mass through the attitude, and might
+eventually let the rotational channel contribute information instead of error.
+The designed but unrun partial-loss and window-seed experiments belong here: both
+test the estimator rather than the lifecycle.
+
+\item \textbf{Calibration-robust release evidence and health-gated release.}
+The force-balance rule showed that evidence independent of the mass estimate
+removes the carry-phase false acceptances and allows uncommanded loss to be
+detected and flown through. Its remaining weakness is the absolute thrust map.
+Evidence that is insensitive to a constant thrust-coefficient error --- for
+example the relative step in $m_{\mathrm{acc}}$ against the value recorded
+after lift, or an online calibration of $k_f$ in empty hover --- should be
+tested with thrust-map error and delayed detachment crossed, the combination
+the campaign did not fly. The release command should also not be issued while
+the estimator is unhealthy.
+
+\item \textbf{Change-detection and rotational baselines.} A comparison against
+CUSUM or a related procedure on the same signals, under a matched false-alarm
+constraint, would show whether persistence on a filtered score is near the
+achievable detection performance. Since the mass estimate gave no consistent
+tracking benefit over the lumped residual in carry, its value should next be
+tested where the residual cannot substitute for it --- in the rotational
+channel, with the inner-loop scaling no longer shared between the arms.
+
+\item \textbf{Thrust-map robustness and hardware transfer.} The one-for-one
+sensitivity to the thrust coefficient, measured for the release detector at
+$\pm\SI{10}{\percent}$, should be measured for the estimator's mass with the
+designed $\pm\SI{5}{\percent}$ mismatch and then against motor-stand
+calibration of $k_f$ and $k_m$. Transfer should proceed through
+tethered hover with the estimator running open loop, centred pickup, and only
+then dynamic flight, with electronic-speed-controller telemetry replacing
+simulated rotor speeds and a supervisor gating every stage.
+\end{enumerate}
+
+\section{Closing Remark}
+
+The result that generalises beyond this vehicle concerns the relation between an
+estimate and a decision. A continuously estimated mass can drive the model of a
+predictive controller without any event, and doing so kept every flight of the
+frozen cohort stable. Deciding that a payload has gone is a different matter: the
+same estimate that is accurate enough to adapt a model in hover is not reliable
+enough to declare a release in manoeuvre. In this work that decision was safe
+either when the estimate was asked a narrower question --- whether a release that
+has already been commanded has physically happened --- or when it was not asked
+at all, and the release question was put to a measurement that does not depend
+on it. The second form also detects a load lost without a command; it moves the
+weak point from the manoeuvre to the calibration of the thrust map.
+
+\end{spacing}
+\newpage

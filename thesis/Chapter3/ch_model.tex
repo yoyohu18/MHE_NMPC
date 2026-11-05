@@ -1,0 +1,849 @@
+%=== CHAPTER THREE ===
+%% Kinematics, dynamics, and the parameter structure of the payload-adaptive
+%% model.  2026-11-05: the deployed estimator is the reduced velocity--mass MHE;
+%% the 14-state full-state estimator is retained as the configuration of the
+%% evaluation campaigns.  The estimator formulation (eq:xaug, eq:pmhe,
+%% eq:mheresid) and the controller's model (eq:pnmpc, eq:predmodel) moved to
+%% Chapter 4, Section 4.2, with their labels.
+%% Restructured 2026-11-03 into six sections.  Implementation detail that used
+%% to live here (initialisation, the NMPC problem and its input baseline, the
+%% actuator envelope and allocation, the residual specific force, inner-loop
+%% bandwidth) now lives in Chapter 4 and keeps its original labels
+%% (sec:model:seed, eq:nmpc, eq:hover, eq:envelope, sec:model:residual, ...),
+%% so cross-references resolve unchanged.  Experimental numbers live in
+%% Chapter 5.  The pre-restructure source is in git history.
+
+\chapter{Modeling and Parameter Structure}
+\label{ch:model}
+\begin{spacing}{1.5}
+\setlength{\parskip}{0.22in}
+
+A quadrotor that picks up a parcel does not merely become heavier. It also
+becomes harder to rotate: on the platform of this work, a \SI{0.30}{\kg} parcel
+hanging about a quarter of a metre below the rotor plane adds fifteen percent to
+the mass but more than doubles the roll and pitch inertia
+(Section~\ref{sec:model:magnitudes}). These are two distinct changes to the
+equations of motion, and a controller that compensates only the first loses
+inner-loop bandwidth in a way that mass adaptation cannot explain.
+
+This chapter derives the model that the estimator and the controller share and
+makes explicit which of its parameters are identified online. Its structural
+claim is that, for a payload grasped on the thrust axis, both changes are
+governed by a \emph{single} online scalar. The composite mass $\mT$ is
+identified from the translational channel; the roll and pitch inertia increment
+then follows from $\mT$ by rigid-body algebra and the nominal vertical arm of
+the gripper. No payload mass is supplied to either optimiser, and no attach or
+release notification to the estimator. The nominal arm is a geometric prior, and
+Section~\ref{sec:model:whynot} states exactly what that prior is and what it is
+not.
+
+Section~\ref{sec:model:frames} defines the system and its assumptions,
+Section~\ref{sec:model:dyn} its dynamics, and Section~\ref{sec:model:payload}
+the coupling between payload mass and inertia. Section~\ref{sec:model:onedof}
+reduces the payload to one online degree of freedom and explains why the
+estimator keeps away from the rotational channel. Section~\ref{sec:model:phys}
+describes the measured input and the interface to the autopilot, and
+Section~\ref{sec:model:approx} collects the modelling assumptions and their
+limits. The estimator and controller models built on this chapter are collected
+in Section~\ref{sec:frame:models}; their numerical form, initialisation and
+constraints, the residual specific force and the inner-loop scheduling belong to
+Chapter~\ref{ch:framework}; the
+experimental evidence for the design choices belongs to
+Chapter~\ref{ch:evaluation}.
+
+\section{System Definition and Modelling Assumptions}\label{sec:model:frames}
+
+Two reference frames are used throughout. The world frame $\mathcal{W}$ is
+East--North--Up (ENU), so that gravity acts along $-z$. The body frame
+$\mathcal{B}$ is Front--Left--Up (FLU) with its origin at the geometric centre of
+the rotor disc --- \emph{not} at the centre of mass. The thrust vector passes
+through the body origin by construction.
+
+The state vector and the control input are
+\begin{equation}
+x = \bigl[\bm{p};\, \bm{v};\, \bm{q};\, \bm{\omega}\bigr] \in \mathbb{R}^{13},
+\qquad
+u = \bigl[T;\, \bm{\tau}\bigr] \in \mathbb{R}^{4},
+\label{eq:state}
+\end{equation}
+where $\bm{p}$ and $\bm{v}$ are the position and velocity in $\mathcal{W}$,
+$\bm{q}$ is the unit quaternion encoding the attitude of $\mathcal{B}$ relative
+to $\mathcal{W}$ (Section~\ref{sec:model:quat}),
+$\bm{\omega}$ is the body rate in $\mathcal{B}$, $T$ is the collective thrust
+along the body $z$ axis, and $\bm{\tau}$ is the body torque. We abbreviate
+$\ev = [0,0,1]^{\!\top}$, and write $\mB$, $\mP$ and $\mT=\mB+\mP$ for the
+bare-airframe, payload and composite masses.
+
+Three assumptions define the system.
+\begin{enumerate}
+\item \emph{The bare airframe is balanced about the body origin}, so that its
+centre of mass and the body origin coincide when no payload is attached. This is
+an assumption about the vehicle, not a consequence of the frame choice.
+\item \emph{The payload is a point mass $\mP$ rigidly attached on the thrust
+axis}, at the body-frame offset $\rp = [0,\,0,\,r_z]^{\!\top}$ with $r_z<0$: the
+load hangs below the airframe. The gripper aligns the vehicle over the parcel
+before attaching; the residual horizontal offset that alignment leaves is
+treated as an approximation in Section~\ref{sec:model:approx}.
+\item \emph{Rotor thrust follows the static quadratic law} of
+Section~\ref{sec:model:phys}, with calibrated coefficients.
+\end{enumerate}
+
+\subsection{Attitude representation}\label{sec:model:quat}
+
+Attitude is represented by a unit quaternion under the \emph{Hamilton} convention
+with the scalar part first,
+\begin{equation}
+\bm{q} = [q_w,\, q_x,\, q_y,\, q_z]^{\!\top},
+\qquad \|\bm{q}\| = 1,
+\label{eq:quatdef}
+\end{equation}
+encoding the rotation from $\mathcal{B}$ to $\mathcal{W}$. The corresponding
+rotation matrix is
+\begin{equation}
+R(\bm{q}) =
+\begin{bmatrix}
+q_w^2 + q_x^2 - q_y^2 - q_z^2 & 2(q_xq_y - q_wq_z) & 2(q_xq_z + q_wq_y) \\[2pt]
+2(q_xq_y + q_wq_z) & q_w^2 - q_x^2 + q_y^2 - q_z^2 & 2(q_yq_z - q_wq_x) \\[2pt]
+2(q_xq_z - q_wq_y) & 2(q_yq_z + q_wq_x) & q_w^2 - q_x^2 - q_y^2 + q_z^2
+\end{bmatrix}.
+\label{eq:Rq}
+\end{equation}
+Three conventions are fixed here and used throughout: the Hamilton product, the
+scalar-first component order of \eqref{eq:quatdef}, and $\bm{\omega}$ resolved
+in $\mathcal{B}$.
+
+One scalar derived from \eqref{eq:Rq} is used repeatedly: the fraction of the
+collective thrust that acts vertically. With roll $\phi$ and pitch $\theta$ in
+the ZYX Euler convention $R = R_z(\psi)R_y(\theta)R_x(\phi)$, it is the $(3,3)$
+entry of the rotation matrix,
+\begin{equation}
+\cos\phi\,\cos\theta \;=\; \ev^{\!\top} R(\bm{q})\, \ev \;=\; 1 - 2\bigl(q_x^2+q_y^2\bigr).
+\label{eq:costheta}
+\end{equation}
+The implementation evaluates the right-hand side directly from the quaternion.
+
+\section{Quadrotor Dynamics with a Rigid Payload}\label{sec:model:dyn}
+
+\subsection{Kinematics}\label{sec:model:kin}
+
+Translational kinematics is the definition of velocity,
+\begin{equation}
+\dot{\bm{p}} = \bm{v}.
+\label{eq:kin}
+\end{equation}
+With the body rate resolved in $\mathcal{B}$, attitude kinematics is the
+Hamilton product of the attitude with the pure quaternion of the body rate,
+\begin{equation}
+\dot{\bm{q}} = \tfrac{1}{2}\, \bm{q} \otimes [0,\, \bm{\omega}]
+= \tfrac{1}{2}\, \Xi(\bm{q})\, \bm{\omega},
+\qquad
+\Xi(\bm{q}) =
+\begin{bmatrix}
+-q_x & -q_y & -q_z \\
+ q_w & -q_z &  q_y \\
+ q_z &  q_w & -q_x \\
+-q_y &  q_x &  q_w
+\end{bmatrix}.
+\label{eq:quat}
+\end{equation}
+The body rate enters on the \emph{right} of the product because it is resolved
+in the body frame; a world-frame rate would enter on the left. The
+implementation uses the matrix form, which is linear in $\bm\omega$.
+One property of $\Xi$ matters for estimation: $\bm{q}^{\!\top}\Xi(\bm{q})=\bm 0^{\!\top}$
+for every quaternion, so $\bm q^{\!\top}\dot{\bm q}=0$ and the kinematics
+preserve $\lVert\bm q\rVert$ exactly. The estimator integrates \eqref{eq:quat}
+across a whole window before comparing it with measurements, and any drift of the
+norm would appear as an attitude residual that the optimiser could attribute to
+the payload parameter.
+
+Neither \eqref{eq:kin} nor \eqref{eq:quat} contains a mass, an inertia, or any
+other physical parameter. \emph{The payload therefore enters the model only
+through the dynamics.}
+
+\subsection{Translational dynamics}\label{sec:model:trans}
+
+Newton's second law in $\mathcal{W}$, with thrust rotated from the body frame and
+a linear aerodynamic drag term, gives
+\begin{equation}
+\dot{\bm{v}} = \frac{1}{\mT}\Bigl( R(\bm{q})\, \ev\, T - k_d\, \bm{v} \Bigr) - g\, \ev,
+\label{eq:trans}
+\end{equation}
+where $\mT$ is the \emph{composite} mass of airframe plus payload, $k_d$ is a
+fixed drag coefficient, and $g$ is the gravitational acceleration. The mass ---
+and only the mass --- enters here, as the scalar gain $1/\mT$ from thrust to
+acceleration. If the thrust is known independently of the model, the measured
+motion determines $\mT$ through \eqref{eq:trans} in ordinary near-hover flight,
+with no dedicated excitation manoeuvre; the qualification ``independently of the
+model'' is the subject of Section~\ref{sec:model:phys}.
+
+Projecting \eqref{eq:trans} onto $\ev$ and neglecting the vertical component of
+the drag term gives the vertical force balance
+\begin{equation}
+\mT\bigl(g + a_z\bigr) \;=\; T\cos\phi\,\cos\theta ,
+\label{eq:vbal}
+\end{equation}
+with $\cos\phi\cos\theta$ from \eqref{eq:costheta} and $a_z=\dot v_z$. It is
+used to initialise the estimator (Section~\ref{sec:model:seed}).
+
+\subsection{Rotational dynamics}\label{sec:model:rot}
+
+Let $\Jb = \mathrm{diag}(J_{xx}, J_{yy}, J_{zz})$ denote the inertia of the bare
+airframe about its own centre of mass, and $\Jt$ the composite inertia derived in
+Section~\ref{sec:model:paxis}. Euler's equation in the body frame is
+\begin{equation}
+\dot{\bm{\omega}} = \Jt^{-1}\Bigl( \bm{\tau} - \bm{\omega} \times \Jt \bm{\omega} \Bigr),
+\label{eq:rot}
+\end{equation}
+where $\bm{\omega} \times \Jt \bm{\omega}$ is the gyroscopic coupling.
+Equation~\eqref{eq:rot} holds in this form only when the inertia and the applied
+moments refer to the same point, and for a free-flying body that point must be
+the centre of mass. The composite inertia must therefore be taken about the
+composite centre of mass, which \emph{moves} when a payload is attached
+(Section~\ref{sec:model:paxis}). For the centred payload of assumption~2 that
+centre of mass stays on the thrust axis, so thrust contributes no moment to
+\eqref{eq:rot}.
+
+Taken together, \eqref{eq:trans} and \eqref{eq:rot} give each payload-dependent
+quantity exactly one point of entry: the composite mass appears only as $1/\mT$
+in the translational dynamics, and the inertia increment only inside $\Jt$ in
+the rotational dynamics. This separation is what allows the two effects to be
+attributed to distinct physical channels, and it is used throughout
+Section~\ref{sec:model:onedof}.
+
+\section{Payload-Induced Mass and Inertia Coupling}\label{sec:model:payload}
+
+With the payload of assumption~2, define the composite mass and the
+\emph{reduced mass}
+\begin{equation}
+\mT = \mB + \mP,
+\qquad
+\mu = \frac{\mB\, \mP}{\mB + \mP} = \frac{\mB\, \mP}{\mT}.
+\label{eq:mu}
+\end{equation}
+
+\subsection{Inertia increment and the reduced mass}\label{sec:model:paxis}
+
+The inertia increment requires more care than the parallel-axis theorem applied
+naively, because \emph{the centre of mass itself moves when the payload is
+attached}. With the airframe centre of mass at the body origin, the composite
+centre of mass lies on the thrust axis at
+\begin{equation}
+\rc = \frac{\mP}{\mT}\, \rp = \Bigl[0,\; 0,\; \frac{\mP}{\mT}\,r_z\Bigr]^{\!\top}.
+\label{eq:rc}
+\end{equation}
+The theorem must be applied about this \emph{new} centre of mass, and both bodies
+contribute, since the airframe no longer sits at the centre of mass either.
+
+Consider a roll or pitch axis and let $d=|r_z|$ denote the lever arm. From
+\eqref{eq:rc}, the distances of the two bodies from the composite centre of mass
+are
+\begin{equation}
+\underbrace{\bigl\| \bm{0} - \rc \bigr\| = \frac{\mP}{\mT}\, d}_{\text{airframe}},
+\qquad
+\underbrace{\bigl\| \rp - \rc \bigr\| = \Bigl( 1 - \frac{\mP}{\mT} \Bigr) d = \frac{\mB}{\mT}\, d}_{\text{payload}} .
+\label{eq:dists}
+\end{equation}
+The payload's distance is \emph{smaller} than $d$. Adding the two
+parallel-axis contributions and simplifying,
+\begin{align}
+\dJ
+&= \mB \Bigl( \frac{\mP}{\mT} d \Bigr)^{\!2}
+ + \mP \Bigl( \frac{\mB}{\mT} d \Bigr)^{\!2} \nonumber \\[4pt]
+&= \frac{d^2}{\mT^2}\Bigl( \mB\, \mP^2 + \mP\, \mB^2 \Bigr)
+ = \frac{d^2}{\mT^2}\, \mB\, \mP \bigl( \mP + \mB \bigr) \nonumber \\[4pt]
+&= \frac{\mB\, \mP}{\mT}\, r_z^2
+ = \mu\, r_z^2 .
+\label{eq:reduced}
+\end{align}
+The factor $(\mB + \mP)$ produced by the sum cancels one power of $\mT$ in the
+denominator, and the two contributions collapse onto the reduced mass
+\eqref{eq:mu} --- the same quantity that governs the two-body problem, and for
+the same reason: the inertia of a rigid pair about its centre of mass depends
+only on the \emph{relative} position of the two bodies.
+
+Equation~\eqref{eq:reduced} also identifies a natural error. Writing
+$\dJ = \mP r_z^2$ --- treating the payload as orbiting a fixed body origin, and
+forgetting both the airframe's own contribution and the displacement of the
+centre of mass --- overestimates the increment by the factor $\mT / \mB$, which
+is \SI{14.5}{\percent} at the heavier payload of this work.
+
+The same computation carried out for the full tensor gives, for an on-axis
+point mass,
+\begin{equation}
+\Jt \;=\; \Jb + \mu\Bigl(\lVert\rp\rVert^2 I_3 - \rp\,\rp^{\!\top}\Bigr)
+\;=\; \Jb + \mathrm{diag}\bigl(\mu r_z^2,\; \mu r_z^2,\; 0\bigr).
+\label{eq:Jdeployed}
+\end{equation}
+Three consequences are used below. The increment is \emph{isotropic} in roll and
+pitch, so a single scalar $\dJ=\mu r_z^2$ describes both. It is
+\emph{diagonal}: every off-diagonal product of inertia contains a horizontal arm
+and vanishes. And the yaw increment is exactly zero for a point mass on the yaw
+axis; the parcel's own rotational inertia about its centre is the only yaw
+contribution, and Section~\ref{sec:model:approx} declares its omission.
+
+\subsection{Magnitudes on the experimental platform}\label{sec:model:magnitudes}
+
+The factor by which the payload slows the roll and pitch response to a given
+torque is the inertia ratio
+\begin{equation}
+\kappa \;=\; \frac{J_{xx} + \dJ}{J_{xx}} .
+\label{eq:gain}
+\end{equation}
+For the two payloads used in the experiments, attached at the nominal arm
+$r_z=\SI{-0.27}{\meter}$ on the platform of this work
+($\mB = \SI{2.0643}{\kg}$, $J_{xx} = \SI{0.0142}{\kg\meter\squared}$),
+equations \eqref{eq:mu}, \eqref{eq:reduced} and \eqref{eq:gain} give
+\begin{equation}
+\begin{array}{lccc}
+ & \mu\ [\si{\kg}] & \dJ\ [\si{\kg\meter\squared}] & \kappa \\[2pt]
+\mP=\SI{0.15}{\kg} & 0.140 & 0.0102 & 1.72 \\
+\mP=\SI{0.30}{\kg} & 0.262 & 0.0191 & 2.34
+\end{array}
+\label{eq:numbers}
+\end{equation}
+A \SI{0.30}{\kg} parcel on a \SI{2.06}{\kg} airframe is a \SI{15}{\percent}
+change of mass but a more than \emph{two-fold} change of roll and pitch inertia.
+Adapting the mass alone, in the thrust channel, accounts for the first and not
+the second. The increment is governed by how far \emph{below} the airframe the
+load hangs, through $r_z^2$, which is why the gripper geometry, and not only the
+parcel, sets the difficulty of the task.
+
+\section{Single-Parameter Estimation Structure}\label{sec:model:onedof}
+
+\subsection{One online degree of freedom}
+
+Equations \eqref{eq:mu}--\eqref{eq:Jdeployed} express every payload-dependent
+quantity of the model through two numbers, the payload mass $\mP$ and the
+vertical arm $r_z$, and the two are not on an equal footing.
+
+The mass changes from flight to flight and within a flight: it is zero before a
+grasp, takes the parcel's value after it, and returns to zero at release,
+possibly in several steps if a load is lost piecewise. It is also
+\emph{observable}, through the gain $1/\mT$ of \eqref{eq:trans}. It is therefore
+the quantity estimated online, in the form of the composite mass $\mT$, and the
+payload mass follows as
+\begin{equation}
+\mP = (\mT - \mB)^{+},
+\label{eq:mPplus}
+\end{equation}
+where $(\cdot)^{+}$ denotes the positive part, because the mass estimate is
+permitted to fall slightly below $\mB$ to leave room for calibration error.
+
+The vertical arm, by contrast, is a property of the gripper rather than of the
+parcel. It is fixed by where the gripper holds the load relative to the rotor
+plane, and it enters the equations only through the inertia increment, which is
+weakly excited in delivery flight. It is therefore held at a nominal value
+rather than estimated. The inertia increment consumed by the model is then a
+function of the single online scalar,
+\begin{equation}
+\boxed{\;\dJ(\mT) \;=\; \frac{\mB\,(\mT-\mB)^{+}}{\mT}\;r_z^2\;}
+\label{eq:dJofm}
+\end{equation}
+which vanishes when the mass estimate returns to the bare-airframe value. No
+attach or release event is needed to switch the inertia on or off: the algebra
+does it, continuously, as the estimate moves. The mass is estimated; the inertia
+is derived from it and is never an independent decision variable.
+
+\subsection{Which channel identifies the mass}\label{sec:model:rotchannel}
+
+Equation~\eqref{eq:dJofm} makes the rotational dynamics depend on $\mT$. Should
+the \emph{estimator} also be allowed to use that dependence, so that the
+angular-rate residual contributes information about the mass?
+
+In principle it should: the increment is larger than the airframe inertia
+itself (Section~\ref{sec:model:magnitudes}), so any roll or pitch manoeuvre
+carries a strong mass signature. In practice the rotational channel of this
+platform is not modelled well enough to carry an absolute quantity. Three
+independent errors were found in it: the calibrated airframe inertia differs
+substantially from the simulator's model description; rotor drag acting
+through the vertical offset of the rotor plane produces a velocity-dependent body
+moment that \eqref{eq:rot} does not contain; and the reconstructed torque of an
+unloaded vehicle carries a small constant bias
+(Section~\ref{sec:model:approx}). None prevents the vehicle from flying, but an
+optimiser that is allowed to move $\mT$ inside the rotational model will use the
+mass to absorb all three. Development flights with that freedom produced large
+mass overestimates, reported in Section~\ref{sec:eval:amode}.
+
+The deployed estimator therefore does not integrate the rotational dynamics at
+all. It keeps the translational dynamics \eqref{eq:trans}, supplies the measured
+attitude as a known input instead of estimating it, and holds the composite mass
+and the velocity as its only states (Section~\ref{sec:frame:redmodel}). The mass
+then enters the estimator's model only where the model --- a thrust, a mass and
+gravity --- is trustworthy, and no inertia, torque or arm enters it.
+
+The evaluation campaigns of Chapter~\ref{ch:evaluation} were flown with an
+earlier, full-state estimator that does integrate \eqref{eq:quat} and
+\eqref{eq:rot} (Section~\ref{sec:model:mhe}). It approaches the same separation
+from the other side, by removing the direct sensitivity of the rotational
+dynamics to the mass decision variable,
+\begin{equation}
+\frac{\partial \dot{\bm\omega}}{\partial \mT}\bigg|_{\text{estimator}} = 0 .
+\label{eq:nodwdm}
+\end{equation}
+It does not, however, leave the payload inertia out of its rotational model: an
+estimator that integrates the bare-airframe inertia sees a heavy, low-hanging
+load as an unexplained angular response. The increment is instead inserted as a
+\emph{known parameter} computed from the previous solution $\hat m^{-}$ and held
+constant within the window,
+\begin{equation}
+\dJ^{\mathrm{lag}} = \frac{\mB\,\bigl(\hat m^{-}-\mB\bigr)^{+}}{\hat m^{-}}\; r_z^2,
+\qquad
+\frac{\partial \dJ^{\mathrm{lag}}}{\partial \mT}\bigg|_{\text{window}} = 0,
+\label{eq:Afrozen}
+\end{equation}
+refreshed between solves at the \SI{10}{\hertz} window rate. In the
+implementation the positive part in \eqref{eq:Afrozen} is smoothed over a width
+of \SI{0.02}{\kg}, which near $\hat m^{-}=\mB$ changes the increment by less
+than the airframe calibration error. Table~\ref{tab:amode} places this
+\emph{lagged} treatment between the two alternatives, and adds the deployed
+reduced estimator as a fourth row.
+
+\begin{table}[ht]
+\centering
+\caption{Treatments of the rotational channel inside the estimator. The
+controller always uses \eqref{eq:dJofm} evaluated at the published estimate;
+only the estimator's own model differs between rows. The first three rows are
+treatments within the full-state estimator.}
+\label{tab:amode}
+\small
+\begin{tabular}{@{}llll@{}}
+\toprule
+Treatment & $\dJ$ inside the estimator & $\partial\dot{\bm\omega}/\partial \mT$ & Status \\
+\midrule
+omitted & $0$ & zero & available, off \\
+lagged & \eqref{eq:dJofm} at the previous solution $\hat m^{-}$ & zero & evaluation campaigns \\
+live & \eqref{eq:dJofm} at the decision variable $\mT$ & non-zero & rejected \\
+\midrule
+not integrated (reduced) & none; attitude measured & --- & deployed default \\
+\bottomrule
+\end{tabular}
+\\[4pt]
+\footnotesize The corresponding implementation settings are listed in Appendix~A.
+The lagged treatment is the full-state default of the experiment entry points;
+the library default of the full-state estimator remains the omitted treatment.
+Since 5 November 2026 the entry points select the reduced estimator.
+\end{table}
+
+The omitted treatment satisfies \eqref{eq:nodwdm} with the wrong inertia; the
+live treatment has the right inertia but gives the optimiser the mass as a
+rotational knob. The lagged treatment keeps both properties: within a solve the
+increment is a constant, and from one solve to the next it follows the mass.
+Section~\ref{sec:eval:amode} compares the omitted and lagged treatments in
+closed loop.
+
+Equation~\eqref{eq:nodwdm} removes the \emph{direct} sensitivity only, and it
+should not be read as saying that the rotational channel has no influence on a
+full-state estimate. Two indirect couplings remain. Within a window, the
+angular-rate residual shapes the estimated attitude trajectory, and the attitude
+sets the direction of the thrust in \eqref{eq:trans}; an error in the rotational
+model therefore reaches the mass through the attitude. Between windows,
+\eqref{eq:Afrozen} feeds the previous mass back into the rotational model, so a
+biased estimate changes the inertia used in the next window. The lagged
+treatment does not remove these paths. The reduced estimator removes both: it
+has no estimated attitude through which an error could pass, and no inertia into
+which a previous mass could be fed back. Section~\ref{sec:eval:reduced} compares
+the two estimators in replay and in closed loop.
+
+\subsection{What is estimated, what is derived, and what is fixed}\label{sec:model:whynot}
+
+Table~\ref{tab:params} records the identity of every parameter of the model. One
+scalar is an online degree of freedom; everything else is derived from it by the
+algebra of Section~\ref{sec:model:payload}, calibrated once for the airframe, or
+held at a nominal value.
+
+\begin{table}[ht]
+\caption{Model parameters, classified by identity. Only the composite mass is a
+decision variable of the estimator; the inertia increment is generated from it.}
+\label{tab:params}
+\centering
+\footnotesize
+\begin{tabular}{@{}l p{0.20\textwidth} c p{0.26\textwidth} p{0.16\textwidth}@{}}
+\toprule
+Symbol & Meaning & Dim. & Identity & Value / enters \\
+\midrule
+$\mT$ & composite mass & 1 & \textbf{MHE decision variable} & \eqref{eq:trans} \\
+\midrule
+$\dJ$ & roll/pitch inertia increment & 1 & derived, \eqref{eq:dJofm}; absent from the deployed estimator, lagged in the full-state one & \eqref{eq:predmodel}, \eqref{eq:Afrozen} \\
+$\mP$ & payload mass & 1 & derived, $(\mT-\mB)^{+}$ & \eqref{eq:dJofm} \\
+\midrule
+$r_z$ & payload vertical arm & 1 & nominal gripper geometry & \SI{-0.27}{\meter} \\
+$\cvec$ & CoM horizontal offset & 2 & \textbf{not modelled}; held at $\bm 0$ & --- \\
+\midrule
+$\mB$ & bare-airframe mass & 1 & calibration & \SI{2.0643}{\kg} \\
+$\Jb$ & bare-airframe inertia & 3 & calibration & $\mathrm{diag}(0.0142,$ $0.0142, 0.0210)$ \si{\kg\meter\squared} \\
+$k_f, k_m$ & thrust and yaw-reaction coefficients & 2 & calibration & \SI{8.55e-6}{\newton\second\squared}, \SI{0.016}{\meter} \\
+$k_d$, $g$ & drag coefficient, gravity & 2 & constants & \SI{0.05}{\kg\per\second}, \SI{9.81}{\meter\per\second\squared} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Three entries of the table invite objection.
+
+\paragraph{Why not augment the inertia increment as well?} Because it is nearly
+unobservable in the flight regime of interest, and because the channel through
+which it would be observed is the one this platform models least well. The
+increment acts only through $\dot{\bm{\omega}}$, which a delivery task spent
+largely in near-hover, low-rate flight excites weakly; a free $\dJ$ would let the
+optimiser explain measurement noise and the rotational model errors of
+Section~\ref{sec:model:rotchannel} with a quantity the data barely constrain.
+Moreover $\Jt$ appears \emph{inverted} in \eqref{eq:rot} and is propagated across
+the horizon, so an error in it is amplified rather than damped, and inertia
+elements are two orders of magnitude smaller than the mass, which would worsen
+the scaling of the estimator's Hessian.
+
+\paragraph{Why not estimate a horizontal offset?} Because at the operating
+condition of this work there is none to estimate, and carrying one is costly. The
+gripper aligns over the parcel before attaching, so the offset is bounded by the
+alignment tolerance; an estimated offset would be identifiable only through the
+rotational residual, the channel that Section~\ref{sec:model:rotchannel} keeps
+away from absolute quantities; and an offset is undefined once the payload has
+gone, so any parameterisation that carries one must also say what it becomes at
+release.
+
+\paragraph{Why is a nominal $r_z$ acceptable?} Because the arm is a property of
+the gripper, fixed by its design, and not information about the parcel. It is a
+geometric prior, and the method does use it: it enters the inertia increment
+\eqref{eq:dJofm} of both optimisers, where its error propagates quadratically ---
+a \SI{10}{\percent} error in $r_z$ is a \SI{21}{\percent} error in $\dJ$, which
+mis-sizes the predicted attitude response and the inner-loop ratio $\kappa$. It
+does not enter the deployed estimator at all. In the full-state estimator it
+cannot enter the mass estimate through a derivative, because of
+\eqref{eq:nodwdm}, but it can through the indirect paths of
+Section~\ref{sec:model:rotchannel}; the size of that effect has not been
+measured. The difference between the nominal and the realised arm is quantified
+in Section~\ref{sec:model:approx}.
+
+\paragraph{The information boundary.} The precise claim of this dissertation is
+that \emph{no task-specific payload mass enters the estimator or the controller,
+and no attach or release notification enters the estimator}. It is not the
+stronger claim that the flight stack contains no payload-related constant. Two
+such constants remain and are disclosed: the nominal arm $r_z$ above, and the
+platform's \SI{0.30}{\kg} payload \emph{envelope}, which sets the inertia floor
+of the attach-time bootstrap (Section~\ref{sec:frame:bootstrap}). Both are
+specifications of the airframe and its gripper, in the same category as $\Jb$ or
+the actuator envelope, and neither is the mass of the parcel carried on a
+particular flight. The controller's own release command is used to start the
+confirmation timeout, to end the inertia floor and to gate the reset of the
+residual force (Chapter~\ref{ch:framework}); it does not set the payload mass.
+
+\section{Measured-Input Reconstruction and Model Interfaces}\label{sec:model:phys}
+
+\subsection{The physical input}
+
+The thrust and torque in \eqref{eq:trans} and \eqref{eq:rot} must be known to the
+estimator. They are reconstructed from measured rotor speeds $\omega_i$ through
+the quadratic rotor law $F_i = k_f \omega_i^2$ and the linear map from the four
+rotor thrusts to the wrench. For the X configuration of this platform, with
+rotor positions $(x_i,y_i)$, $|x_i|=|y_i|=l=\SI{0.174}{\meter}$, and spin
+directions $d_i\in\{\pm1\}$,
+\begin{equation}
+\begin{bmatrix} \Tphys \\ \tauphys \end{bmatrix}
+=
+\underbrace{
+\begin{bmatrix}
+1 & 1 & 1 & 1 \\
+-l & \phantom{-}l & \phantom{-}l & -l \\
+-l & \phantom{-}l & -l & \phantom{-}l \\
+-k_m & -k_m & \phantom{-}k_m & \phantom{-}k_m
+\end{bmatrix}}_{M}
+\begin{bmatrix} F_1 \\ F_2 \\ F_3 \\ F_4 \end{bmatrix},
+\qquad F_i = k_f \omega_i^2 ,
+\label{eq:phys}
+\end{equation}
+whose rows are $\Tphys=\sum_i F_i$, $\tau_x=\sum_i y_iF_i$,
+$\tau_y=-\sum_i x_iF_i$ and $\tau_z=-k_m\sum_i d_iF_i$, with
+$k_f=\SI{8.55e-6}{\newton\second\squared}$ and yaw-reaction coefficient
+$k_m=\SI{0.016}{\meter}$. The first two moment components are lever-arm
+products; the third is the aerodynamic reaction torque, proportional to rotor
+thrust and opposed to the rotor's own spin.
+
+\paragraph{This is a wrench, not a state estimate.} Equation~\eqref{eq:phys}
+returns the wrench the \emph{actuators generate}. It excludes $\Jt\dot{\bm\omega}$
+and rotor gyroscopic terms, which is what makes it usable as the known input
+$u^{\mathrm{phys}}$ of the estimator rather than as a second, competing estimate
+of the state. The deployed estimator uses only its first row, $\Tphys$; the
+full-state estimator uses all four. Rotor speeds are sampled at \SI{250}{\hertz} and averaged over each
+\SI{10}{\hertz} estimation interval, consistent with a zero-order-hold
+discretisation of \eqref{eq:trans} and \eqref{eq:rot}.
+
+\paragraph{Why the commanded input cannot be used.} Let the controller compute
+its thrust command from an assumed mass $\tilde{m}$, so that in hover
+$T_{\mathrm{cmd}} = \tilde{m} g$. Feeding $T_{\mathrm{cmd}}$ into
+\eqref{eq:trans} and solving for the mass yields
+$\mT = T_{\mathrm{cmd}} / g = \tilde{m}$ for \emph{any} $\tilde{m}$: the relation
+is satisfied identically, the residual carries no information, and the estimate
+would reproduce whatever the controller already believed. Any inversion error,
+saturation or motor lag between command and rotor is likewise invisible.
+Equation~\eqref{eq:phys} breaks this circularity because rotor speeds are a
+physical measurement into which no model state enters, taken downstream of
+allocation and the motor dynamics. The principle recurs throughout the design: an
+adaptive loop must be fed by a signal that is not itself a product of the
+adaptation. The difference is not academic; the executed yaw torque recorded in
+flight is about a third of the intended value (Section~\ref{sec:eval:platform}).
+
+\subsection{The interface to the autopilot}\label{sec:model:interface}
+
+The deployed system is a cascade: the predictive controller is the outer loop,
+and the autopilot's body-rate controller and mixer are the inner loop. Three
+torque-like quantities exist in it and must not be confused.
+\begin{enumerate}
+\item The \emph{predicted torque} $\bm\tau$ is a decision variable of the
+controller's problem. It shapes the predicted state trajectory through
+\eqref{eq:predmodel} and never leaves the solver.
+\item The \emph{body-rate setpoint} is what the autopilot receives. After each
+solve the controller publishes, at \SI{50}{\hertz}, a collective thrust and a
+body-rate setpoint interpolated along the latest predicted trajectory: the
+thrust from the predicted input sequence, converted to a normalised throttle by
+\eqref{eq:throttleinv}, and the body rate from the predicted state sequence one
+stage ahead, starting at its second node. The roll and pitch rate setpoints are
+then scaled for the payload inertia (Section~\ref{sec:frame:omegascale}). The
+autopilot's rate loop and mixer turn this setpoint into rotor commands.
+\item The \emph{physical torque} $\tauphys$ is what the rotors actually
+produced, reconstructed from measured rotor speeds by \eqref{eq:phys}. It is the
+only torque the full-state estimator sees; the deployed estimator sees no torque
+at all.
+\end{enumerate}
+The division is deliberate: the rate loop runs at a bandwidth the
+\SI{20}{\hertz} solver cannot match, and leaving allocation on the autopilot
+keeps saturation handling next to the hardware. It is also why the estimator
+evaluates $M$ in the \emph{forward} direction from measured rotor speeds rather
+than reading $\bm\tau$ off the solver: $M$ applied to what the motors did is a
+measurement, whereas $\bm\tau$ from the solver is an intention. The ROS layer
+never evaluates the inverse allocation; its role in sizing the controller's
+input bounds is discussed with the actuator envelope in
+Section~\ref{sec:frame:inputs}.
+
+Figure~\ref{fig:paramflow} traces the complete accounting: what is measured,
+what is estimated, what is generated by algebra, where each quantity is consumed,
+and how the loop closes.
+
+\begin{figure}[tbp]
+\centering
+\begin{tikzpicture}[
+  x=1cm,y=1cm,font=\scriptsize,
+  nd/.style={draw=gray!70,rounded corners=1.5pt,align=center,inner sep=3pt,
+             font=\scriptsize},
+  key/.style={nd,draw=black,line width=0.7pt,fill=gray!15},
+  der/.style={nd,fill=gray!4},
+  gh/.style={nd,draw=gray!50,text=gray!40!black},
+  ar/.style={-{Latex[length=1.5mm]},semithick,gray!25!black},
+  ln/.style={semithick,gray!25!black},
+  bus/.style={-{Latex[length=2mm]},line width=0.9pt,gray!15!black},
+  dar/.style={-{Latex[length=1.4mm]},dashed,thin,gray!55!black},
+  lb/.style={font=\tiny,align=center,inner sep=1.2pt},
+  lane/.style={draw=gray!45,dashed,rounded corners=2.5pt,inner sep=3mm},
+  hd/.style={font=\tiny\bfseries,text=gray!50!black,inner sep=1.2pt},
+]
+
+%========================= band 1: measured =========================
+\node[nd]  (rot) at (2.0,0)   {rotor speeds $\omega_i$\\ \SI{250}{\hertz}};
+\node[der] (wr)  at (5.8,0)   {$\Tphys,\ \tauphys$\\ \eqref{eq:phys}};
+\node[nd]  (odo) at (10.6,0)  {odometry\\ $\bm p,\bm v,\bm q,\bm\omega$};
+\draw[ar] (rot) -- node[lb,above]{$M$ forward} (wr);
+\begin{scope}[on background layer]
+  \node[lane,fit=(rot)(wr)(odo)] (L1) {};
+\end{scope}
+\node[hd,anchor=south west] at ([xshift=1mm]L1.north west) {MEASURED --- downstream of allocation, independent of every model state};
+
+%========================= band 2: estimated ========================
+\node[nd,text width=62mm] (res) at (6.6,-2.1)
+  {model \eqref{eq:redmodel} with measured attitude $\tilde{\bm q}$;\ residual $\bm e^v_i=\bm y^v_i-\bm v_i\in\mathbb{R}^{3}$ \eqref{eq:redresid}};
+\node[nd]  (vres) at (4.8,-3.35) {velocity residual\\ $\bm e^v_i$};
+\node[gh]  (wres) at (8.4,-3.35) {full-state variant:\\ $\bm e_i\in\mathbb{R}^{13}$ \eqref{eq:mheresid}};
+\node[key] (mT)   at (4.8,-4.5)  {$\mT$};
+\node[gh,text width=24mm] (wonly) at (8.4,-4.5) {campaigns only;\\ $\partial\dot{\bm\omega}/\partial\mT=0$ \eqref{eq:nodwdm}};
+\node[gh]  (seed) at (1.5,-4.5)  {seed\\ \eqref{eq:winbal}};
+\node[gh,text width=26mm]  (prior)at (12.7,-3.9) {fixed inputs\\ $r_z$ nominal\\ $\mB,\Jb$ calibrated};
+\draw[ar] (wr.south) -- (res.north -| wr.south);
+\node[lb,anchor=east] at (5.65,-0.95) {$\Tphys$ (input)};
+\draw[ar] (odo.south) -- ++(0,-1.05) -| (res.north -| 8.6,0);
+\node[lb,anchor=west] at (10.75,-0.95) {$\bm y_i$ (measured)};
+\draw[ar] (res.south -| vres.north) -- (vres.north);
+\draw[ar] (res.south -| wres.north) -- (wres.north);
+\draw[ar] (vres) -- (mT);
+\draw[dar] (wres) -- (wonly);
+\draw[dar] (seed) -- node[lb,above]{initial\\ iterate only} (mT);
+\begin{scope}[on background layer]
+  \node[lane,fit=(res)(vres)(wres)(mT)(wonly)(seed)(prior)] (L2) {};
+\end{scope}
+\node[hd,anchor=south west] at ([xshift=1mm]L2.north west) {ESTIMATED --- the only online degree of freedom};
+
+\draw[bus] (mT.south) -- node[lb,right,pos=0.55]{one scalar, nothing else} (4.8,-6.4);
+
+%========================= band 3: derived ==========================
+\node[der] (mp)  at (3.0,-7.4)  {$\mP=(\mT-\mB)^{+}$\\ \eqref{eq:mPplus}};
+\node[der] (dj)  at (7.6,-7.4)  {$\dJ=\mu(\mT)\,r_z^2$\\ \eqref{eq:dJofm}};
+\node[gh]  (cz)  at (11.9,-7.4) {$\cvec\equiv\bm 0$\\ centred grasp};
+\draw[ar] (mp) -- (dj);
+\begin{scope}[on background layer]
+  \node[lane,fit=(mp)(dj)(cz)] (L3) {};
+\end{scope}
+\node[hd,anchor=south west] at ([xshift=1mm]L3.north west) {DERIVED --- rigid-body algebra, no new unknowns};
+\draw[dar] (prior.south) -- ++(0,-1.5) -| node[lb,pos=0.22,above]{$\to \dJ$} (dj.north);
+\draw[ar] (1.0,-7.4) -- (mp.west);
+
+\draw[ln] (4.8,-6.4) -- (1.0,-6.4) -- (1.0,-8.6) -- (4.4,-8.6);
+\fill[gray!25!black] (1.0,-7.4) circle (0.6pt);
+\node[lb,rotate=90,anchor=south] at (0.92,-7.4) {$\mT$ passes straight through};
+\draw[ar] (dj.south)  -- (7.6,-8.6);
+\draw[ln] (4.4,-8.6) -- (7.6,-8.6);
+\draw[bus] (6.1,-8.6) -- node[lb,right,pos=0.6]
+  {$p_{\mathrm{NMPC}}=[\,x_{\mathrm{ref}};\mT;\dJ;\bm 0;\hat{\bm d}\,]\in\mathbb{R}^{20}$ \eqref{eq:pnmpc}}
+  (6.1,-9.6);
+
+%========================= band 4: consumed =========================
+\node[nd,text width=54mm,align=left] (mdl) at (4.4,-10.7)
+  {\textbf{prediction model} $F$ \eqref{eq:predmodel}\\[1pt]
+   $1/\mT \to \dot{\bm v}$\\
+   $\Jt(\dJ) \to \dot{\bm\omega}$, diagonal};
+\node[nd,text width=44mm,align=left] (cst) at (11.0,-10.7)
+  {\textbf{cost baseline} $u_{\mathrm{hover}}$ \eqref{eq:hover}\\[1pt]
+   $T_h=\mT(g-\hat d_z)$\\ torque entries $=0$};
+\begin{scope}[on background layer]
+  \node[lane,fit=(mdl)(cst)] (L4) {};
+\end{scope}
+\node[hd,anchor=south west] at ([xshift=1mm]L4.north west) {CONSUMED --- the same numbers enter the constraint and the objective};
+
+%========================= band 5: actuated =========================
+\node[nd] (eta) at (5.0,-12.7) {throttle $\eta(T)$ \eqref{eq:throttleinv}};
+\node[nd] (w1)  at (5.0,-13.6) {body-rate $\bm\omega_1$, scaled by $\kappa(\dJ)$};
+\node[nd] (px4) at (11.0,-13.15) {PX4 rate loop $+$ mixer \eqref{eq:mixerinv}};
+\draw[ar] (eta.east) -- (px4.west|-eta.east) -- (px4.west);
+\draw[ar] (w1.east)  -- (px4.west|-w1.east)  -- (px4.west);
+\begin{scope}[on background layer]
+  \node[lane,fit=(eta)(w1)(px4)] (L5) {};
+\end{scope}
+\node[hd,anchor=south east] at ([xshift=-1mm]L5.north east) {ACTUATED --- $\bm\tau$ never leaves the solver};
+\draw[ln] (mdl.south) -- ++(0,-0.55) -| (2.0,-12.7);
+\draw[ar] (2.0,-12.7) -- (eta.west);
+\draw[ln] (2.0,-12.7) -- (2.0,-13.6);
+\draw[ar] (2.0,-13.6) -- (w1.west);
+
+%========================= loop closure =============================
+\draw[bus,gray!40!black] (px4.east) -- (14.4,-13.15) -- (14.4,1.55)
+  -- node[lb,above,pos=0.55]{the loop closes through \emph{measurement}, never through the controller's intention} (2.0,1.55) -- (rot.north);
+\end{tikzpicture}
+\caption[How the payload parameter reaches the controller]{How the payload parameter reaches the controller. In the
+deployed estimator the window's measured velocities and its known inputs --- the
+measured attitude and the reconstructed thrust --- meet in one velocity residual
+\eqref{eq:redresid}, which identifies the single boxed decision variable. The
+full-state estimator of the evaluation campaigns (grey) used the thirteen-state
+residual \eqref{eq:mheresid}, whose angular-rate block constrained the vehicle's
+own attitude and rate but, by \eqref{eq:nodwdm}, not the mass directly. Everything in the \textsc{derived} band follows
+from $\mT$ by the algebra of Section~\ref{sec:model:payload} and introduces
+neither a new unknown nor a new sensor; the inertia increment vanishes by itself
+when the estimate returns to the bare airframe, so no release event is needed to
+remove it. In the full-state estimator the same increment, lagged by one solve
+\eqref{eq:Afrozen}, was also written into its rotational model as a known
+parameter; the deployed estimator has no rotational model. The horizontal-offset parameters are held at zero by the operating
+condition, not estimated. The loop closes through measured rotor speeds, never
+through the moment the solver intended. The residual specific force $\hat{\bm d}$ in the controller's parameter vector is estimated from the same measurements but is not a payload parameter (Section~\ref{sec:model:residual}).}
+\label{fig:paramflow}
+\end{figure}
+
+\section{Modelling Assumptions and Limitations}\label{sec:model:approx}
+
+The relations of this chapter fall into two classes, and the distinction matters
+for how the results should be read.
+
+\paragraph{Relations that hold exactly.} For a payload on the thrust axis, the
+vertical displacement \eqref{eq:rc} of the centre of mass is collinear with the
+thrust, so the thrust produces no moment about the composite centre of mass;
+this is a consequence of geometry, not an omitted term. The increment
+\eqref{eq:reduced} is exact for a rigid pair of point masses, and the yaw
+increment of \eqref{eq:Jdeployed} is exactly zero for a point mass on the yaw
+axis.
+
+The remaining relations are approximations whose validity depends on the
+operating condition.
+
+\paragraph{The payload is assumed centred.} The model sets the horizontal
+attachment offset to zero. A residual offset $r_{xy}$ left by imperfect
+alignment produces a constant trim moment $\mP g\, r_{xy}$ and a roll/pitch
+inertia error $\mu r_{xy}^2$. At the \SI{0.03}{\meter} attachment tolerance of
+the gripper and \SI{0.30}{\kg} these are \SI{0.09}{\newton\meter}, or
+\SI{18}{\percent} of the roll authority, and \SI{0.4}{\percent} of the
+increment. The first is supplied by the integral action of the autopilot's rate
+loop; the second is negligible.
+
+\paragraph{The arm is nominal, not measured.} Both optimisers use
+$r_z=\SI{-0.27}{\meter}$ for every flight. The realised arm is set by the height
+at which the vehicle grasps the parcel, which is commanded in the autopilot's
+local frame whose vertical zero drifts from flight to flight; it varies between
+about \SI{0.25}{\meter} and \SI{0.30}{\meter}. Over that range the true increment
+for \SI{0.30}{\kg} lies between \SI{0.0164}{} and
+\SI{0.0236}{\kg\meter\squared} against the modelled
+\SI{0.0191}{\kg\meter\squared} --- an error of $-14$ to $+23$ percent, and a
+true inertia ratio between $2.15$ and $2.66$ against the modelled $2.34$. Every
+result in this dissertation carries an arm error of this size, unmeasured on a
+per-flight basis.
+
+\paragraph{The parcel's own inertia is neglected.} The payload is treated as a
+point mass. A box of side \SI{0.15}{\meter} has a central inertia of about
+$0.004\,\mP$, about \SI{2}{\percent} of the roll/pitch increment and the only
+yaw contribution of a centred load.
+
+\paragraph{The airframe rotational model is approximate.} The calibrated
+airframe inertia $J_{xx}=\SI{0.0142}{\kg\meter\squared}$ is about
+\SI{60}{\percent} of the value in the simulator's model description, and a
+least-squares fit of bare-airframe pitch dynamics recovered an effective inertia
+$1.07$--$1.18$ times the latter; rotor drag acting through the vertical offset of
+the rotor plane produces a velocity-dependent body moment that \eqref{eq:rot}
+does not contain; and a constant torque bias of order \SI{0.01}{\newton\meter}
+appears in the reconstructed torque of an unloaded vehicle. These errors are the
+reason the mass is kept off the rotational channel, and the reason the deployed
+estimator does not integrate that channel at all
+(Section~\ref{sec:model:rotchannel}). They remain in the controller's prediction
+model, where they appear as an unmodelled moment that the rate loop absorbs.
+
+\paragraph{The full-state estimator's inertia lags its mass by one solve.} The
+deployed estimator carries no inertia; in the full-state estimator the lagged
+treatment \eqref{eq:Afrozen} evaluates the increment at the previous solution,
+so during a grasp or release the estimator's inertia trails the true value by
+one \SI{0.1}{\second} solve, and under sustained manoeuvre a biased mass
+estimate is fed back into the next window's rotational model. The treatment
+reduces the loaded mass bias but does not remove it
+(Section~\ref{sec:eval:amode}).
+
+\paragraph{The inertia is treated as constant across a transfer.}
+Equation~\eqref{eq:rot} omits the $\dot{\Jt}\bm{\omega}$ term that a
+time-varying inertia would contribute. The omission is exact on either side of a
+grasp or release and wrong only for the duration of the transfer itself; within
+the estimator the affected samples fall inside a single window and are absorbed
+as process noise.
+
+\paragraph{The rotor model is static.} The thrust coefficient $k_f$ is a
+constant, and is known to lose validity under large induced inflow during fast
+translation \cite{bangura2012}; the mass channel recovers $\mT$ from an absolute
+thrust and inherits any error in $k_f$ in full. The yaw reaction of
+\eqref{eq:phys} is the steady-state term only, omitting the rotor
+angular-acceleration contribution $\sum_i J_r \dot\omega_i$, and rotor
+gyroscopic moments are not modelled. These terms are negligible in hover and
+mild manoeuvre but not during rapid yaw. Because $\mT$ is recovered from an
+absolute thrust, a relative error in $k_f$ passes one-for-one into $\hat m$; this
+sensitivity is analytical and has not been measured in the evaluated
+configuration (Section~\ref{sec:eval:validity}). Translational data cannot
+separate the two: the deployed estimator flags a thrust-map error that drives
+its estimate outside a physical band (Section~\ref{sec:frame:health}) but does
+not correct it.
+
+\section{Chapter Summary}\label{sec:model:summary}
+
+This chapter addressed the first research objective and the structural part of
+the second. For a rigid payload grasped on the thrust axis, the roll and pitch
+inertia increment is the reduced mass times the square of the vertical arm, so
+the composite mass is the only payload quantity that has to be identified
+online; the inertia follows from it algebraically and vanishes with it. The mass
+is identified on the translational channel, from a thrust reconstructed from
+measured rotor speeds. The deployed estimator does not integrate the rotational
+dynamics at all --- the measured attitude enters as a known input --- so the
+optimiser cannot use the mass to absorb rotational model error; the full-state
+estimator of the evaluation campaigns achieved a weaker form of the same
+separation by carrying the inertia as a parameter lagged by one solve. The structure rests on stated
+assumptions --- a centred grasp, a nominal arm and a calibrated rotor model ---
+whose limits are collected in Section~\ref{sec:model:approx}. What remains open
+is the numerical form of the estimator and the controller, and how a release is
+recognised; Chapter~\ref{ch:framework} takes these up.
+
+\end{spacing}
+\newpage

@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  最小测试 world:地面 + 一个独立的 box 载荷 + magnetic_gripper 夹爪插件。
+  无人机(plain x500,空机)由 PX4 SITL 在运行时 spawn 进来,model 名默认
+  x500_0。box 只靠 contact 搁在地面上(底面 z=0、中心 z=0.075),没有任何
+  joint 把它固定到地面 —— 这样 attach 后无人机推力一旦超过合重就能把它拉
+  离地面,单边接触自然分离,绝不会出现"焊到地面"那种把控制器拽崩的约束。
+
+  物理引擎用 dartsim(Harmonic 默认)。DetachableJoint 的 fixed 约束在
+  dartsim 下稳定。注意 PX4 自带 world 用的是 type="ode";这里按任务要求显式
+  用 dart,步长/更新率沿用 PX4 的 0.004s / 250Hz 以保持飞控数值环境一致。
+
+  关键设计:夹爪插件挂在 <world> 上,且关节只在收到 attach 命令时才创建 ——
+  绝不在加载时就把无人机焊到 box 上。历史上"加载即存在的关节把飞机从起飞
+  那一刻焊到接地物体、引发不可恢复振荡"的坑,正是靠这一点规避的。
+-->
+<sdf version="1.9">
+  <world name="gripper_test">
+    <physics type="dart">
+      <max_step_size>0.004</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+      <real_time_update_rate>250</real_time_update_rate>
+    </physics>
+    <gravity>0 0 -9.8</gravity>
+    <magnetic_field>6e-06 2.3e-05 -4.2e-05</magnetic_field>
+    <atmosphere type="adiabatic"/>
+    <scene>
+      <grid>false</grid>
+      <ambient>0.4 0.4 0.4 1</ambient>
+      <background>0.7 0.7 0.7 1</background>
+      <shadows>true</shadows>
+    </scene>
+
+    <!--
+      重要:gz-sim 里只要 world SDF 里写了任何 <plugin>,就不再自动加载
+      PX4 server.config 里的默认 system(Physics/SceneBroadcaster/Sensors...)。
+      而 PX4 SITL 靠 SceneBroadcaster 的 /world/<w>/scene/info 服务来判定"世界
+      就绪"、靠 Imu/Mag/Baro/NavSat 给 EKF 喂数据。所以这里必须把 PX4
+      server.config(src/modules/simulation/gz_bridge/server.config)里那整套
+      system 显式抄进来,再加上我们的 magnetic_gripper —— 否则无人机永远 spawn
+      不出来,PX4 卡在 "Waiting for Gazebo world"。
+    -->
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-contact-system" name="gz::sim::systems::Contact"/>
+    <plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu"/>
+    <plugin filename="gz-sim-air-pressure-system" name="gz::sim::systems::AirPressure"/>
+    <plugin filename="gz-sim-air-speed-system" name="gz::sim::systems::AirSpeed"/>
+    <plugin filename="gz-sim-apply-link-wrench-system" name="gz::sim::systems::ApplyLinkWrench"/>
+    <plugin filename="gz-sim-navsat-system" name="gz::sim::systems::NavSat"/>
+    <plugin filename="gz-sim-magnetometer-system" name="gz::sim::systems::Magnetometer"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+
+    <!-- 夹爪插件:world 级 system。topic 名都可在这里改;不写则用默认值。 -->
+    <plugin filename="magnetic_gripper"
+            name="magnetic_gripper::MagneticGripper">
+      <attach_topic>/gripper/attach</attach_topic>
+      <detach_topic>/gripper/detach</detach_topic>
+      <state_topic>/gripper/state</state_topic>
+    </plugin>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>1 1</size>
+            </plane>
+          </geometry>
+          <surface>
+            <friction>
+              <ode/>
+            </friction>
+            <bounce/>
+            <contact/>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>500 500</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>0.8 0.8 0.8 1</ambient>
+            <diffuse>0.8 0.8 0.8 1</diffuse>
+            <specular>0.8 0.8 0.8 1</specular>
+          </material>
+        </visual>
+        <pose>0 0 0 0 -0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 -0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx><ixy>0</ixy><ixz>0</ixz>
+            <iyy>1</iyy><iyz>0</iyz><izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <pose>0 0 0 0 -0 0</pose>
+      <self_collide>false</self_collide>
+    </model>
+
+    <!--
+      待抓取的 box:0.3kg、边长 0.15m 的实心立方体,惯量按实心立方体
+      I = m*s^2/6 = 0.3*0.15^2/6 = 0.001125 kg·m^2(三轴相同)算出,是真实物理值。
+      放在 (1, 0, 0.075):离 spawn 原点 1m,无人机起飞后平移过去悬停在它正上
+      方即可触发吸附。
+
+      质量为什么是 0.3kg:载荷是靠 fixed joint 焊在机体下方约 0.4~0.5m 处的
+      "吊挂",对 2.0kg 空机 x500 是个显著的 CoM/惯量突变。实测 0.8kg 吊挂会直接
+      把 PX4 自带位置/姿态控制打崩(无人机吸上后失控栽到地面)—— 这本身是"飞控
+      对载荷突变的响应"里有意义的结果,但要演示"吸附后平稳上飞悬停",载荷得温和
+      些。0.3kg(合总重 2.3kg,约 66% 推力)下 CoM 下移约 0.06m,控制器能稳住。
+      想研究更重载荷的失稳响应,把这里调大即可。
+    -->
+    <model name="box">
+      <pose>1.0 0.0 0.075 0 0 0</pose>
+      <link name="box_link">
+        <inertial>
+          <mass>0.3</mass>
+          <inertia>
+            <ixx>0.001125</ixx><ixy>0</ixy><ixz>0</ixz>
+            <iyy>0.001125</iyy><iyz>0</iyz><izz>0.001125</izz>
+          </inertia>
+        </inertial>
+        <visual name="visual">
+          <geometry>
+            <box><size>0.15 0.15 0.15</size></box>
+          </geometry>
+          <material>
+            <ambient>0.8 0.2 0.1 1</ambient>
+            <diffuse>0.8 0.2 0.1 1</diffuse>
+          </material>
+        </visual>
+        <collision name="collision">
+          <geometry>
+            <box><size>0.15 0.15 0.15</size></box>
+          </geometry>
+        </collision>
+      </link>
+    </model>
+
+    <light name="sunUTC" type="directional">
+      <pose>0 0 500 0 -0 0</pose>
+      <cast_shadows>true</cast_shadows>
+      <intensity>1</intensity>
+      <direction>0.001 0.625 -0.78</direction>
+      <diffuse>0.904 0.904 0.904 1</diffuse>
+      <specular>0.271 0.271 0.271 1</specular>
+      <attenuation>
+        <range>2000</range>
+        <linear>0</linear>
+        <constant>1</constant>
+        <quadratic>0</quadratic>
+      </attenuation>
+      <spot>
+        <inner_angle>0</inner_angle>
+        <outer_angle>0</outer_angle>
+        <falloff>0</falloff>
+      </spot>
+    </light>
+
+    <spherical_coordinates>
+      <surface_model>EARTH_WGS84</surface_model>
+      <world_frame_orientation>ENU</world_frame_orientation>
+      <latitude_deg>47.397971057728974</latitude_deg>
+      <longitude_deg> 8.546163739800146</longitude_deg>
+      <elevation>0</elevation>
+    </spherical_coordinates>
+  </world>
+</sdf>

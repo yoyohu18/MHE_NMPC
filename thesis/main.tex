@@ -1,0 +1,172 @@
+% Originally re-defined by Z.C.TIAN (https://github.com/doem97) for the EEE MSc dissertation guideline.
+% Adapted for NTU MAE (School of Mechanical and Aerospace Engineering) MSc dissertations, Aug 2026.
+% Checked against the current official MAE guidance (verify before submission, requirements can change):
+%   - Guidelines for Students Writing MSc Dissertations (v2, 25 Feb 2026):
+%     https://www.ntu.edu.sg/media/docs/librariesprovider122/curriculum/guidelines-for-students-writing-msc-dissertations(v-2_250226).pdf
+%   - Thesis Declaration Statements (25 Nov 2025, Word):
+%     https://www.ntu.edu.sg/media/docs/librariesprovider122/curriculum/thesis-declaration-statements_25nov2025.docx
+%   - MAE Dissertation Information page:
+%     https://www.ntu.edu.sg/mae/admissions/current-students/graduate-studies/dissertation-information
+% Font: Times New Roman 12pt (mathptmx) -- matches MAE's requirement.
+% Margins: MAE requires "at least 3cm" on all sides; this template already uses top=3cm, bottom=3cm,
+% left=3.5cm, right=3cm, so it satisfies the requirement without changes.
+% Based on W.M.ZHAO version, original link in overleaf:
+% (https://www.overleaf.com/latex/templates/ntu-master-dissertation/ngnhrrwryccv)
+
+\documentclass[12pt]{report}
+
+%% Useful packages
+\usepackage[a4paper,top=3cm,bottom=3cm,left=3.5cm,right=3cm,marginparwidth=1.75cm,headheight=22pt]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{bm}
+\usepackage{cite}
+\usepackage{courier}
+\usepackage[titletoc]{appendix}
+\usepackage[export]{adjustbox}
+\usepackage[nottoc,notlot,notlof]{tocbibind}
+\usepackage[labelfont=bf, textfont=bf]{caption}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage[bottom]{footmisc}
+\usepackage{hyperref}
+\usepackage{float}
+\usepackage{setspace}
+\usepackage{fancyhdr} % Fancy header
+\usepackage{url}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{siunitx}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usepackage{rotating}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,fit,backgrounds}
+\usepackage[utf8]{inputenc}
+\usepackage{mathptmx} %Times Font
+
+%==== Dissertation metadata: the ONLY place personal details are entered ====
+% Fields still to be filled by the author before submission are marked TO FILL.
+% They render as neutral bracketed text, never as red draft notes.
+\newcommand{\thesistitle}{Moving-Horizon-Estimation-Enabled Nonlinear Model Predictive Control for Quadrotors under Abrupt Payload Changes}
+\newcommand{\thesisauthor}{[Author Name]}            % TO FILL
+\newcommand{\degreeprogramme}{MASTER OF SCIENCE IN [PROGRAMME]} % TO FILL
+\newcommand{\supervisorname}{[Supervisor Name]}      % TO FILL
+\newcommand{\labname}{[Laboratory or Research Group]} % TO FILL
+\newcommand{\submissionyear}{2026}
+
+% Draft-note mechanism retained for working drafts only; it is switched off and
+% no draft note remains in the source.
+\newif\ifshowdraftnotes
+\showdraftnotesfalse
+\newcommand{\draftnote}[1]{\ifshowdraftnotes\par\noindent\textcolor{red}{\textbf{[DRAFT NOTE: #1]}}\par\fi}
+
+%==== Notation macros shared by all chapters (2026-09-18 rewrite) ====
+\providecommand{\dJ}{\Delta J}
+\providecommand{\mB}{m_B}
+\providecommand{\mP}{m_P}
+\providecommand{\mT}{m_T}
+\providecommand{\Jb}{J_B}
+\providecommand{\Jt}{J_T}
+\providecommand{\svec}{\bm{s}}
+\providecommand{\cvec}{\bm{c}_{xy}}
+\providecommand{\rp}{\bm{r}_p}
+\providecommand{\rxy}{\bm{r}_{xy}}
+\providecommand{\rc}{\bm{c}}
+\providecommand{\Tphys}{T_{\mathrm{phys}}}
+\providecommand{\tauphys}{\bm{\tau}_{\mathrm{phys}}}
+\providecommand{\tcom}{\bm{\tau}_{\mathrm{com}}}
+\providecommand{\ev}{\bm{e}_3}
+\newcommand{\sref}{\lVert\svec\rVert_{\mathrm{ref}}}
+\DeclareMathOperator*{\argmin}{arg\,min}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    citecolor=black,
+    urlcolor=blue,
+    pdftitle={\thesistitle},
+    pdfauthor={\thesisauthor}
+}
+
+%==== Header and Footer configure ====
+% Define the plain pagestyle used by most chapters
+\fancypagestyle{plain}{
+\fancyhf{} % Clear header footer
+\fancyhead[R]{\bf \small \textsl{\nouppercase{\leftmark}} \vspace{0.1in}}
+\fancyfoot[R]{\thepage}
+% Set the right side of the footer to be the page number
+\renewcommand{\headrulewidth}{2pt}
+}
+
+%==== Overall Config ====
+\setlength{\parindent}{0in} % Set paragraph indent as 0
+\setlength{\emergencystretch}{3em} % Avoid isolated overfull lines in long technical prose
+% \setlength{\fboxsep}{-0.3in}%
+\setlength{\fboxrule}{0.5pt} % Set the bounding box around the image as 0.5pt
+\pagestyle{plain}
+% \renewcommand{\chaptermark}[1]{\markboth{#1}{}}% Comment this line to use header "Chapter 1. Literature View"; otherwise header is "Literature View"
+
+
+
+\begin{document}
+\fontdimen2\font=0.5em% inter word space
+\pagenumbering{gobble}
+\hypersetup{pageanchor=false}
+%==== FRONT PART====
+\include{Title/coverpage} % Coverpage
+\include{Title/titlepage} % Titlepage
+\include{Title/SoO} % Titlepage
+\include{Title/SDS} % Titlepage
+\include{Title/AAS} % Titlepage
+
+%\begingroup
+%\let\cleardoublepage\clearpage
+
+\hypersetup{pageanchor=true}
+\pagenumbering{roman}
+
+\renewcommand*\contentsname{\centering Table of Contents}
+\tableofcontents
+\newpage
+
+\include{Front/Abstract_new}
+\include{Front/Acknowledgement}
+\include{Front/Acronyms_new}
+\include{Front/Symbols_new}
+
+
+\renewcommand{\listfigurename}{\centering List of Figures}
+\clearpage\phantomsection
+\addcontentsline{toc}{chapter}{List of Figures}
+\listoffigures
+\newpage
+
+\renewcommand{\listtablename}{\centering List of Tables}
+\clearpage\phantomsection
+\addcontentsline{toc}{chapter}{List of Tables}
+\listoftables
+\newpage
+
+%\endgroup
+
+%==== MAIN PART ====
+
+\pagenumbering{arabic}
+\include{Chapter1/ch_intro}
+\include{Chapter2/ch_related}
+\include{Chapter3/ch_model}
+\include{Chapter4/ch_framework}
+\include{Chapter5/ch_eval}
+\include{Chapter6/ch_conclusion}
+%==== ENDING PART ===
+
+\renewcommand\bibname{References}
+\bibliographystyle{unsrt}
+\begin{spacing}{1.5}
+\bibliography{Ref/References}
+\end{spacing}
+\newpage
+
+\include{Appendix/appendix_new}
+%==== END OF ALL ===
+\end{document}

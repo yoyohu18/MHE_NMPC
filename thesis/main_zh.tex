@@ -1,0 +1,76 @@
+% 第三章中文译本的独立编译入口。
+% 引擎: XeLaTeX (需要 ctex/xeCJK 提供中文支持)。
+%   xelatex main_zh && bibtex main_zh && xelatex main_zh && xelatex main_zh
+% 正文内容见 Chapter3/ch_model_zh.tex, 英文原文见 Chapter3/ch_model.tex。
+
+\documentclass[12pt, UTF8]{ctexrep}
+
+\usepackage[a4paper,top=3cm,bottom=3cm,left=3.5cm,right=3cm,marginparwidth=1.75cm,headheight=22pt]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{bm}
+\usepackage{cite}
+\usepackage[labelfont=bf, textfont=bf]{caption}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{setspace}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{siunitx}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,fit,backgrounds}
+\usepackage{hyperref}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    citecolor=black,
+    urlcolor=blue,
+    pdftitle={面向突变载荷的四旋翼 MHE-NMPC (第三章 中文译本)}
+}
+
+%==== 与 main.tex 相同的记号宏 ====
+\providecommand{\dJ}{\Delta J}
+\providecommand{\mB}{m_B}
+\providecommand{\mP}{m_P}
+\providecommand{\mT}{m_T}
+\providecommand{\Jb}{J_B}
+\providecommand{\Jt}{J_T}
+\providecommand{\svec}{\bm{s}}
+\providecommand{\cvec}{\bm{c}_{xy}}
+\providecommand{\rp}{\bm{r}_p}
+\providecommand{\rxy}{\bm{r}_{xy}}
+\providecommand{\rc}{\bm{c}}
+\providecommand{\Tphys}{T_{\mathrm{phys}}}
+\providecommand{\tauphys}{\bm{\tau}_{\mathrm{phys}}}
+\providecommand{\tcom}{\bm{\tau}_{\mathrm{com}}}
+\providecommand{\ev}{\bm{e}_3}
+\newcommand{\sref}{\lVert\svec\rVert_{\mathrm{ref}}}
+\DeclareMathOperator*{\argmin}{arg\,min}
+
+%==== 指向其他章节的交叉引用 (编号取自英文版 main.pdf 的 .aux) ====
+\makeatletter
+\newlabel{ch:framework}{{4}{46}{}{chapter.4}{}}
+\newlabel{ch:evaluation}{{5}{72}{}{chapter.5}{}}
+\newlabel{sec:frame:momentref}{{4.4.4}{58}{}{subsection.4.4.4}{}}
+\newlabel{sec:frame:omegascale}{{4.6}{66}{}{section.4.6}{}}
+\newlabel{sec:frame:bootstrap}{{4.6.3}{68}{}{subsection.4.6.3}{}}
+\makeatother
+
+\setlength{\parindent}{0pt}
+\setlength{\emergencystretch}{3em}
+
+\begin{document}
+
+\setcounter{chapter}{2}   % 使本章编号为“第三章”
+\include{Chapter3/ch_model_zh}
+
+\renewcommand\bibname{参考文献}
+\bibliographystyle{unsrt}
+\begin{spacing}{1.5}
+\bibliography{Ref/References}
+\end{spacing}
+
+\end{document}

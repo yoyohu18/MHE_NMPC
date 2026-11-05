@@ -1,0 +1,64 @@
+%=== ABSTRACT ===
+\newpage
+\chapter*{\centering Abstract}
+\markboth{Abstract}{}
+\addcontentsline{toc}{chapter}{Abstract}
+
+\begin{spacing}{1.5}
+\setlength{\parskip}{0.18in}
+
+Delivery quadrotors change mass and roll and pitch inertia abruptly when they
+grasp or release a parcel, and a predictive controller that keeps the unloaded
+model plans with the wrong hover thrust and the wrong rotational response. This
+dissertation studies how far such a vehicle can adapt to a centred rigid payload
+from ordinary flight signals, and how it should decide that a commanded release
+has physically happened.
+
+For a payload grasped on the thrust axis, the inertia increment is the reduced
+mass times the square of a nominal vertical arm, so the composite mass is the
+only payload quantity to be identified online. A moving horizon estimator
+identifies it from odometry and the thrust reconstructed from measured rotor
+speeds. In its deployed form it keeps only velocity and mass as states and takes
+the measured attitude as a known input, so that the less reliable rotational
+model has no path to the mass.
+\draftnote{Abstract: add one sentence on the reduced-versus-full-state replay and
+closed-loop comparison once the closed-loop result is in.} One
+health-gated estimate updates a nonlinear model predictive controller
+continuously; a separate lifecycle accepts a release only when evidence
+confirms that the payload has left.
+
+The system is evaluated in PX4/Gazebo software-in-the-loop simulation with
+acados solvers, using a frozen, block-randomised cohort of $120$ flight attempts
+($118$ eligible) at three payload--speed conditions, under nominal release and
+under a detachment held back for \SI{4}{\second} after the command, together with
+smaller ablations and a second frozen campaign of $312$ flights.
+
+All $118$ eligible releases were accepted, \SIrange{2.3}{3.2}{\second} after
+physical detachment. Under delayed detachment the evidence-gated arms never
+accepted a release while the payload was still attached, whereas accepting at
+the command did so in every flight. Running the same confirmation throughout
+carry, however, produced $114$ false acceptances in $20$ of $32$ flights at
+\SI{4}{\meter\per\second}; arming it only after the release command removed them
+without lengthening the delay. Replacing the mass evidence with a force balance
+from rotor speeds and the inertial unit, enabled by the command or by a watchdog
+armed on airborne load, produced no false acceptance in $240$ flights, detected
+$24$ of $24$ loads lost without a command and accepted none of $24$ jammed
+releases; a \SI{10}{\percent} thrust-map error in it, however, either missed every
+release or disabled the watchdog for the lighter payload. In loaded hover the mass estimate was within
+\SI{0.5}{\percent} of truth, but in sustained manoeuvre at
+\SI{4}{\meter\per\second} it was biased low and periodically collapsed toward the
+bare airframe. A residual specific force improved tracking without reducing that
+bias; against a fixed-parameter controller the interface reduced loaded tracking
+error, but estimating the mass gave no consistent benefit over the residual
+alone.
+
+The evidence is from simulation only, and no hardware validity is claimed. Both
+the estimator and the release detector depend on thrust-map calibration, and
+neither was compared against a change-detection baseline.
+
+\textbf{Keywords:} quadrotor; nonlinear model predictive control; moving horizon
+estimation; online mass estimation; payload inertia; release confirmation;
+software-in-the-loop.
+\end{spacing}
+\newpage
+%=== END OF ABSTRACT ===

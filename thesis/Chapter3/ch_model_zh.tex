@@ -1,0 +1,1130 @@
+%=== 第三章（中文译本）===
+%% 英文原文: Chapter3/ch_model.tex
+%% 本文件为中文翻译版, 公式/标号/交叉引用与原文保持一致.
+%% 需要中文支持 (ctex + XeLaTeX), 独立编译入口见 main_zh.tex.
+%% 记号宏定义在 main.tex / main_zh.tex 中.
+
+\chapter{建模与参数结构}
+\label{ch:model-zh}
+\begin{spacing}{1.5}
+\setlength{\parskip}{0.22in}
+
+四旋翼抓取包裹之后，并不只是变重了。它同时变得更难以旋转，而且质心不再位于推力轴线上。
+这是对运动方程的三处彼此独立的改变；只补偿其中第一项的控制器，会以质量自适应无法解释
+的方式失效。
+
+本章推导估计器与控制器共用的模型，并明确指出其中哪些参数在线辨识、哪些不辨识。本章的结
+构性论断——也正是该方法所需传感如此之少的原因——是：载荷引起的三个量既不是三个彼此独立
+的未知量，也不是仅由质量决定的函数。两个标量即已足够：复合质量 $\mT$ 与水平\emph{一阶质
+量矩}（first mass moment）$\svec=\mP\rxy$。由这一对量出发，质心偏移、配平力矩以及占主导
+的滚转/俯仰惯量增量全都可由刚体代数导出；估计器无需被告知抓取偏置，也不会在载荷离机时出
+现任何量变为未定义的情形。
+
+第~\ref{sec:model:frames}~节确定坐标系与约定，第~\ref{sec:model:kin}--\ref{sec:model:dyn}~节
+推导运动学与动力学，第~\ref{sec:model:payload}~节以质量与已知力臂为变量推导经典的载荷参数化。
+随后第~\ref{sec:model:moment}~节说明：对于一架还必须\emph{释放}载荷的飞行器而言，该参数化
+是错误的坐标系，并将其替换为实际部署的估计器所使用的一阶矩参数化。
+第~\ref{sec:model:phys}--\ref{sec:model:ctrl}~节说明这些参数如何被测量、如何被使用，
+第~\ref{sec:model:whynot}--\ref{sec:model:approx}~节为该设计辩护并声明其近似。
+
+\section{坐标系、记号与约定}\label{sec:model:frames}
+
+全文使用两个参考坐标系。世界系 $\mathcal{W}$ 取东--北--天（ENU），因而重力沿 $-z$ 方向。
+机体系 $\mathcal{B}$ 取前--左--上（FLU），原点位于旋翼盘的几何中心——\emph{而非}质心。这一
+选择是刻意的，且后果明确：按构造推力矢量必过机体原点，于是该原点与真实质心之间的任何偏移
+都会显式地表现为一个力矩（第~\ref{sec:model:dyn}~节），而不会被悄悄吸收进坐标系定义之中。
+
+状态向量与控制输入为
+\begin{equation}
+x = \bigl[\bm{p};\, \bm{v};\, \bm{q};\, \bm{\omega}\bigr] \in \mathbb{R}^{13},
+\qquad
+u = \bigl[T;\, \bm{\tau}\bigr] \in \mathbb{R}^{4},
+\label{eq:state}
+\end{equation}
+其中 $\bm{p}$ 与 $\bm{v}$ 是 $\mathcal{W}$ 中的位置与速度，$\bm{q}$ 是描述 $\mathcal{B}$
+相对 $\mathcal{W}$ 姿态的单位四元数（第~\ref{sec:model:quat}~节），$\bm{\omega}$ 是
+$\mathcal{B}$ 中的机体角速率，$T$ 是沿机体 $z$ 轴的总推力（collective thrust），
+$\bm{\tau}$ 是机体力矩。记 $\ev = [0,0,1]^{\!\top}$，并以 $\mB$、$\mP$ 和
+$\mT=\mB+\mP$ 分别表示空机、载荷与复合质量。下标 $xy$ 表示机体系向量的水平分量，故
+$\rxy$ 与 $\cvec$ 分别是 $\rp$ 与 $\rc$ 的水平部分。
+
+\subsection{姿态表示}\label{sec:model:quat}
+
+姿态以单位四元数表示，采用\emph{Hamilton} 约定且标量部分在前，
+\begin{equation}
+\bm{q} = [q_w,\, q_x,\, q_y,\, q_z]^{\!\top},
+\qquad \|\bm{q}\| = 1,
+\label{eq:quatdef}
+\end{equation}
+它编码的是从 $\mathcal{B}$ 到 $\mathcal{W}$ 的旋转。对应的旋转矩阵为
+\begin{equation}
+R(\bm{q}) =
+\begin{bmatrix}
+q_w^2 + q_x^2 - q_y^2 - q_z^2 & 2(q_xq_y - q_wq_z) & 2(q_xq_z + q_wq_y) \\[2pt]
+2(q_xq_y + q_wq_z) & q_w^2 - q_x^2 + q_y^2 - q_z^2 & 2(q_yq_z - q_wq_x) \\[2pt]
+2(q_xq_z - q_wq_y) & 2(q_yq_z + q_wq_x) & q_w^2 - q_x^2 - q_y^2 + q_z^2
+\end{bmatrix}.
+\label{eq:Rq}
+\end{equation}
+
+这里固定并在全文沿用三条约定：Hamilton 乘积、式~\eqref{eq:quatdef} 的标量在前的分量顺序，
+以及 $\bm{\omega}$ 在 $\mathcal{B}$ 中表达。最后一条决定了机体角速率在式~\eqref{eq:quat}
+中出现在乘积的哪一侧。
+
+由式~\eqref{eq:Rq} 导出的一个标量将被反复使用：机体 $z$ 轴与竖直方向之间倾角的余弦，
+\begin{equation}
+\cos\theta \;=\; \ev^{\!\top} R(\bm{q})\, \ev \;=\; 1 - 2\bigl(q_x^2+q_y^2\bigr),
+\label{eq:costheta}
+\end{equation}
+它正是总推力中竖直作用的那一部分所占的比例。
+
+这里的 $\theta$ 是\emph{总倾角}，不是俯仰角。把 $R(\bm{q})$ 写成 ZYX 欧拉角形式
+$R = R_z(\psi)R_y(\theta_p)R_x(\phi)$ 并取其 $(3,3)$ 元，得
+\[
+\ev^{\!\top} R\, \ev \;=\; \cos\phi\,\cos\theta_p ,
+\]
+可见式~\eqref{eq:costheta} 中这一个余弦\emph{本身就是}欧拉角形式竖直平衡里那两个余弦的乘积，
+而 $1-2(q_x^2+q_y^2)$ 是它们的四元数等价式。全文采用单符号写法，是因为实现中算的正是这一式：
+直接由四元数得到，不经欧拉角中间量，也没有万向节奇异。
+
+\section{刚体运动学}\label{sec:model:kin}
+
+平动运动学就是速度的定义，
+\begin{equation}
+\dot{\bm{p}} = \bm{v}.
+\label{eq:kin}
+\end{equation}
+
+姿态运动学由姿态四元数与机体角速率构成的纯四元数之积给出。记
+$\bm{q} = (q_w, \bm{q}_v)$，其中 $\bm{q}_v = [q_x, q_y, q_z]^{\!\top}$，并使用 Hamilton 乘积
+$(a_w, \bm{a}_v) \otimes (b_w, \bm{b}_v) =
+(a_w b_w - \bm{a}_v \!\cdot\! \bm{b}_v,\;
+a_w \bm{b}_v + b_w \bm{a}_v + \bm{a}_v \!\times\! \bm{b}_v)$，可得
+\begin{equation}
+\dot{\bm{q}} = \tfrac{1}{2}\, \bm{q} \otimes [0,\, \bm{\omega}]
+= \tfrac{1}{2}
+\begin{bmatrix}
+-\bm{q}_v \cdot \bm{\omega} \\[2pt]
+q_w \bm{\omega} + \bm{q}_v \times \bm{\omega}
+\end{bmatrix}
+= \tfrac{1}{2}\, \Xi(\bm{q})\, \bm{\omega},
+\label{eq:quat}
+\end{equation}
+其中第二个等号展开了该乘积，第三个等号把结果整理进 $4 \times 3$ 矩阵
+\begin{equation}
+\Xi(\bm{q}) =
+\begin{bmatrix}
+-q_x & -q_y & -q_z \\
+ q_w & -q_z &  q_y \\
+ q_z &  q_w & -q_x \\
+-q_y &  q_x &  q_w
+\end{bmatrix}.
+\label{eq:Xi}
+\end{equation}
+实现中使用式~\eqref{eq:Xi}，即一个对 $\bm{\omega}$ 线性的普通矩阵--向量乘积。注意机体角速率
+在式~\eqref{eq:quat} 中出现在乘积的\emph{右}侧。若 $\bm{\omega}$ 是在 $\mathcal{W}$ 中表达的，
+正确的表达式则应为 $\dot{\bm{q}} = \tfrac{1}{2} [0, \bm{\omega}] \otimes \bm{q}$，二者相差一个
+由 $\bm{q}$ 做的共轭变换。
+
+矩阵形式还揭示了乘积形式所掩盖的一条性质。对任意单位四元数，
+\begin{equation}
+\Xi(\bm{q})^{\!\top}\Xi(\bm{q}) = I_3,
+\qquad
+\bm{q}^{\!\top}\Xi(\bm{q}) = \bm{0}^{\!\top},
+\label{eq:Xiprops}
+\end{equation}
+这可以利用 $\lVert\bm{q}\rVert=1$ 直接由式~\eqref{eq:Xi} 验证。第二个恒等式给出
+$\bm{q}^{\!\top}\dot{\bm{q}} = 0$，因而
+\begin{equation}
+\frac{\mathrm{d}}{\mathrm{d}t}\lVert\bm{q}\rVert^2
+= 2\,\bm{q}^{\!\top}\dot{\bm{q}} = 0 :
+\label{eq:normconserve}
+\end{equation}
+单位模长约束由运动学本身保持，而不是靠反复归一化来维持。这一点在估计器内部尤为重要：估计
+器要在与任何测量作比较之前，先在整个时间窗上积分式~\eqref{eq:quat}；$\lVert\bm{q}\rVert$ 的
+系统性漂移会表现为姿态残差，并被归因到载荷参数上。
+
+式~\eqref{eq:kin} 与式~\eqref{eq:quat} 都不含质量、惯量或任何其他物理参数：运动学是纯粹的
+几何。\emph{因此载荷只能通过动力学进入模型}，这就把本章全部的参数讨论限定在
+第~\ref{sec:model:dyn}~节的三个方程之内。
+
+\section{刚体动力学}\label{sec:model:dyn}
+
+\subsection{平动动力学}\label{sec:model:trans}
+
+在 $\mathcal{W}$ 中写出牛顿第二定律，推力由机体系旋转而来，并计入线性气动阻力项，
+\begin{equation}
+\dot{\bm{v}} = \frac{1}{\mT}\Bigl( R(\bm{q})\, \ev\, T - k_d\, \bm{v} \Bigr) - g\, \ev,
+\label{eq:trans}
+\end{equation}
+其中 $\mT$ 是机体加载荷的\emph{复合}质量，$k_d$ 是固定的阻力系数，$g$ 是重力加速度。
+
+式~\eqref{eq:trans} 是质量——且\emph{只有}质量——进入模型之处，而且它只扮演一个角色：
+从推力到加速度的标量增益 $1/\mT$。这一条事实支撑了整个方法的可观性论证。若能以独立于模型
+的方式获得推力值，则由式~\eqref{eq:trans}，所测得的加速度唯一确定 $\mT$；而且这是在普通的
+近悬停飞行中完成的，不需要专门的激励机动。其中“独立于模型”这一限定至关重要，正是
+第~\ref{sec:model:phys}~节的主题。
+
+值得记录式~\eqref{eq:trans} 沿竖直方向的特例，因为第~\ref{sec:model:seed}~节会直接用到它。
+把式~\eqref{eq:trans} 投影到 $\ev$ 上并忽略阻力项的竖直分量，得到竖直方向的力平衡
+\begin{equation}
+\mT\bigl(g + a_z\bigr) \;=\; T\cos\theta ,
+\label{eq:vbal}
+\end{equation}
+其中 $\cos\theta$ 由式~\eqref{eq:costheta} 给出——等价于 $\cos\phi\,\cos\theta_p$，即第~\ref{sec:model:quat}~节那个两余弦的欧拉角形式——$a_z=\dot v_z$。
+
+\subsection{转动动力学}\label{sec:model:rot}
+
+记 $\Jb = \mathrm{diag}(J_{xx}, J_{yy}, J_{zz})$ 为空机绕其自身质心的惯量。全文假定机体相对
+第~\ref{sec:model:frames}~节所定义的机体原点是配平的，即未挂载荷时两点重合。这是关于飞行器
+本身的假设，而非坐标系选择的推论，并且它是承重性的：第~\ref{sec:model:moment}~节据此把整个
+一阶质量矩都归因于载荷。
+
+记 $\Jt$ 为复合惯量，其推导见第~\ref{sec:model:paxis}~节与第~\ref{sec:model:moment}~节。
+绕复合质心、在机体系中写出的刚体欧拉方程为
+\begin{equation}
+\dot{\bm{\omega}} = \Jt^{-1}\Bigl( \bm{\tau} + \tcom(\cvec) - \bm{\omega} \times \Jt \bm{\omega} \Bigr).
+\label{eq:rot}
+\end{equation}
+其中 $\bm{\omega} \times \Jt \bm{\omega}$ 是通常的陀螺耦合项，$\tcom$ 项将在下文推导。
+
+式~\eqref{eq:rot} 之所以写成\emph{绕复合质心}的形式，并非文体上的选择。欧拉方程只有在惯量
+张量与外力矩取同一参考点、且该点要么是质心、要么是惯性系中的固定点时，才具有这一形式；自由
+飞行的飞行器并无这样的固定点，因此质心是唯一可取的选择。于是 $\Jt$ 与 $\tcom$ 都必须相对复合
+质心计算——而当挂载载荷时，该质心相对机体系是\emph{移动}的，这一位移恰恰正是 $\tcom$ 存在的
+原因。混用两个参考点是一种常见且不易察觉的建模错误。
+
+\subsection{推力偏心力矩}\label{sec:model:tcom}
+
+推力作用于旋翼盘中心，也即机体原点。挂上载荷后，复合质心移动到某个
+$\rc = [c_x, c_y, c_z]^{\!\top} \neq \bm{0}$，于是推力不再通过质心。绕质心的力矩等于作用点
+\emph{相对质心}的位置矢量（即 $-\rc$）与力 $\ev T$ 的叉积：
+\begin{align}
+\tcom(\cvec) &= (-\rc) \times \ev T
+= -\begin{bmatrix} c_x \\ c_y \\ c_z \end{bmatrix}
+\times \begin{bmatrix} 0 \\ 0 \\ T \end{bmatrix} \nonumber \\[4pt]
+&= -\begin{bmatrix} c_y T - 0 \\ 0 - c_x T \\ 0 - 0 \end{bmatrix}
+= \begin{bmatrix} -c_y T \\ +c_x T \\ 0 \end{bmatrix}.
+\label{eq:tcom}
+\end{align}
+
+下文将反复用到式~\eqref{eq:tcom} 的两条性质。
+
+其一，竖直偏移 $c_z$ 不出现。它对叉积的贡献恒为零，因为质心的竖直位移与机体 $z$ 向推力共线；
+重力作用于质心，同样不产生绕质心的力矩。因此与姿态动力学相关的偏移按构造就是二维的，而不是
+被截断成二维的。
+
+其二，力矩 $\tcom$ 在水平悬停时非零，且沿轨迹的平均值也不为零。对于
+第~\ref{sec:model:magnitudes}~节的载荷，它约占可用滚转力矩权限的三分之二，因此带偏心载荷的
+定点悬停需要一个持续的配平力矩。忽略式~\eqref{eq:tcom} 的预测模型所犯的误差因而是一个常值
+力矩、而不是一个小量，并且会当作根本不需要配平力矩来做规划。
+第~\ref{sec:model:ctrl}~节将说明同一项还必须出现在代价函数的输入参考中。
+
+\subsection{参数入口的结构}\label{sec:model:entry}
+
+把式~\eqref{eq:trans}、\eqref{eq:rot} 与 \eqref{eq:tcom} 合起来看，模型具有本论文后续赖以
+成立的性质：
+
+\begin{quote}
+\emph{每一个与载荷相关的参数都恰好只有一个入口。}复合质量以 $1/\mT$ 出现在平动动力学中；
+惯量增量只出现在转动动力学的 $\Jt$ 内部；质心偏移只出现在偏心力矩中，而后者同样是一个
+转动量。
+\end{quote}
+
+正是这种分离使得各参数可以被分别归属到不同的物理通道——质量归于推力--加速度关系，惯量归于
+角加速度，偏移归于稳态力矩平衡。第~\ref{sec:model:mhe}~节与第~\ref{sec:model:whynot}~节会
+直接利用这一点，图~\ref{fig:paramflow} 则把每一个入口端到端地画了出来。
+
+\section{载荷引起的参数}\label{sec:model:payload}
+
+现在推导 $\cvec$ 与惯量增量。载荷建模为一个质点 $\mP$，刚性固连于机体系偏置
+$\rp = [r_x, r_y, r_z]^{\!\top}$ 处，且 $r_z < 0$（负载悬挂于机体下方）。定义复合质量与
+\emph{约化质量}（reduced mass）
+\begin{equation}
+\mT = \mB + \mP,
+\qquad
+\mu = \frac{\mB\, \mP}{\mB + \mP} = \frac{\mB\, \mP}{\mT}.
+\label{eq:mu}
+\end{equation}
+
+本节以 $(\mP,\rp)$ 作为参数化，因为它在物理上最为直观。第~\ref{sec:model:moment}~节则会指出，
+这一对量并不是估计器能够、也不是它应该携带的量，并把下面的每个结果都改写到能够在释放后依然
+成立的坐标中。
+
+\subsection{质心偏移}\label{sec:model:com}
+
+复合质心是两个组成部分位置的质量加权平均。取机体质心位于机体原点、载荷位于 $\rp$，
+\begin{equation}
+\rc = \frac{\mB \cdot \bm{0} + \mP \cdot \rp}{\mT}
+= \frac{\mP}{\mT}\, \rp ,
+\label{eq:rc}
+\end{equation}
+其水平分量即式~\eqref{eq:tcom} 所需的那一对量：
+\begin{equation}
+\cvec = [c_x,\, c_y]^{\!\top} = \frac{\mP}{\mT}\, [r_x,\, r_y]^{\!\top}.
+\label{eq:cxy}
+\end{equation}
+
+\subsection{惯量增量与约化质量}\label{sec:model:paxis}
+
+惯量增量的处理比直接套用平行轴定理要更为小心，因为\emph{挂上载荷时质心本身也移动了}。定理必须
+相对\emph{新的}质心式~\eqref{eq:rc} 来应用，而且两个物体都有贡献——因为机体此时也不再位于质心。
+
+考察某一根轴，并记 $d$ 为对应的力臂。由式~\eqref{eq:rc}，两个物体到复合质心的距离为
+\begin{equation}
+\underbrace{\bigl\| \bm{0} - \rc \bigr\| = \frac{\mP}{\mT}\, d}_{\text{机体}},
+\qquad
+\underbrace{\bigl\| \rp - \rc \bigr\| = \Bigl( 1 - \frac{\mP}{\mT} \Bigr) d = \frac{\mB}{\mT}\, d}_{\text{载荷}} .
+\label{eq:dists}
+\end{equation}
+注意载荷的距离\emph{小于} $d$。把两项平行轴贡献相加并化简，
+\begin{align}
+\Delta J^{(d)}
+&= \mB \Bigl( \frac{\mP}{\mT} d \Bigr)^{\!2}
+ + \mP \Bigl( \frac{\mB}{\mT} d \Bigr)^{\!2} \nonumber \\[4pt]
+&= \frac{d^2}{\mT^2}\Bigl( \mB\, \mP^2 + \mP\, \mB^2 \Bigr)
+ = \frac{d^2}{\mT^2}\, \mB\, \mP \bigl( \mP + \mB \bigr) \nonumber \\[4pt]
+&= \frac{\mB\, \mP}{\mT}\, d^2
+ = \mu\, d^2 .
+\label{eq:reduced}
+\end{align}
+求和所产生的因子 $(\mB + \mP)$ 抵消掉分母中的一次 $\mT$，两项贡献于是收拢为约化质量
+式~\eqref{eq:mu}——它与经典力学中支配两体问题的正是同一个量，原因也相同：一对刚体的惯量只
+取决于它们的\emph{相对}构型。
+
+式~\eqref{eq:reduced} 也指明了一种自然而然会犯的错误。写成
+$\Delta J^{(d)} = \mP d^2$——即把载荷当作绕固定机体原点运转，既忘记机体自身的贡献，也忘记
+质心的位移——会把增量高估 $\mT / \mB$ 倍，在下文所考虑的载荷下即高估 \SI{14.5}{\percent}。
+两个极限情形佐证了式~\eqref{eq:reduced}：当 $\mP \!\ll\! \mB$ 时 $\mu \to \mP$（轻载荷几乎
+不移动质心，朴素表达式恰好成立）；当 $\mP \!\gg\! \mB$ 时 $\mu \to \mB$（重载荷把质心锚定
+住，转而是机体绕它旋转）。
+
+对整个张量（而非单根轴）做同样的计算，可得到增量的闭式表达。以 $I_3$ 记单位阵，
+\begin{align}
+\Delta J(\mP,\rp)
+&= \mB\Bigl(\lVert\rc\rVert^2 I_3 - \rc\rc^{\!\top}\Bigr)
+ + \mP\Bigl(\lVert\rp-\rc\rVert^2 I_3 - (\rp-\rc)(\rp-\rc)^{\!\top}\Bigr) \nonumber\\[4pt]
+&= \mu\Bigl(\lVert\rp\rVert^2 I_3 - \rp\,\rp^{\!\top}\Bigr),
+\label{eq:dJfull}
+\end{align}
+其依据正是式~\eqref{eq:reduced} 的抵消逐元素地成立。写开来，
+\begin{equation}
+\dJ = \mu
+\begin{bmatrix}
+r_y^2 + r_z^2 & -r_x r_y      & -r_x r_z \\[2pt]
+-r_x r_y      & r_x^2 + r_z^2 & -r_y r_z \\[2pt]
+-r_x r_z      & -r_y r_z      & r_x^2 + r_y^2
+\end{bmatrix}.
+\label{eq:dJmatrix}
+\end{equation}
+每个对角元都是式~\eqref{eq:reduced} 取该轴力臂后的结果，每个非对角元则是它所耦合的两条力臂
+之积 $-\mu r_i r_j$。读出对角线便得到熟悉的逐轴增量
+\begin{equation}
+\dJ_{xx} = \mu\bigl(r_y^2 + r_z^2\bigr), \quad
+\dJ_{yy} = \mu\bigl(r_x^2 + r_z^2\bigr), \quad
+\dJ_{zz} = \mu\bigl(r_x^2 + r_y^2\bigr).
+\label{eq:djaxes}
+\end{equation}
+复合惯量为 $\Jt=\Jb+\dJ$。第~\ref{sec:model:Jofs}~节会把这同样的六个元素重新归组到能够在
+释放后依然成立的坐标中。
+
+\subsection{实验平台上的量级}\label{sec:model:magnitudes}
+
+为使概念具体化，考虑本工作所用平台（$\mB = \SI{2.0643}{\kg}$,
+$J_{xx} = \SI{0.0142}{\kg\meter\squared}$，滚转/俯仰力矩权限 \SI{0.5}{\newton\meter}）挂载一个
+\SI{0.3}{\kg} 的载荷，挂点为 $\rp = [0,\, 0.109,\, -0.47]\,$\si{\meter}。由式~\eqref{eq:mu}、
+\eqref{eq:cxy} 与 \eqref{eq:djaxes} 得
+\begin{align}
+\mu &= \SI{0.262}{\kg}, &
+\dJ_{xx} &= \SI{0.0610}{\kg\meter\squared}, \nonumber \\
+\frac{J_{xx} + \dJ_{xx}}{J_{xx}} &= 5.30, &
+c_y &= \SI{13.8}{\milli\meter},
+\label{eq:numbers}
+\end{align}
+因而悬停配平力矩为常值
+\begin{equation}
+|c_y|\, \mT\, g = \SI{0.32}{\newton\meter} \approx \text{滚转力矩权限的}\ \SI{64}{\percent} .
+\label{eq:trimtorque}
+\end{equation}
+
+这些数字比任何定性论述都更尖锐地刻画了本论文所要解决的问题。在 \SI{2.06}{\kg} 的机体上挂
+\SI{0.3}{\kg} 的包裹，是 \SI{15}{\percent} 的质量变化——但同时是滚转惯量\emph{五倍以上}的变化，
+以及对三分之二力矩裕度的长期占用。只自适应质量，对后两者都无从交代。还要注意，$r_z^2$ 项贡献
+了 $\dJ_{xx}$ 的 \SI{97.4}{\percent}：增量主要由负载悬挂在机体\emph{下方}多远决定，而不是由它
+偏离中心多远决定。这一不对称性在下文被反复利用，因为 $r_z$ 恰好是估计器唯一无法观测的几何量，
+而幸运的是，它也是误差影响最小的那一个。
+
+\section{以一阶质量矩作为载荷状态}\label{sec:model:moment}
+
+第~\ref{sec:model:payload}~节中的一切都是用坐标 $(\mP, \rp)$ 表达的。它们是\emph{描述}一次
+抓取的自然坐标，却是\emph{估计}一次抓取的错误坐标，原因在式~\eqref{eq:cxy} 中一望可知：从
+$(\mP,\rp)$ 到可观测量的映射，恰恰在最要紧的极限下不可逆。
+
+\subsection{为什么偏移量是错误的坐标}\label{sec:model:whyS}
+
+考察载荷被释放、即 $\mP \to 0$ 时各个量的行为。
+
+\begin{itemize}
+\item 式~\eqref{eq:tcom} 的力矩 $\tcom$ 趋于零，因为 $\cvec = (\mP/\mT)\rxy \to \bm{0}$。
+这是合乎物理且无害的。
+\item 水平偏移 $\rxy$ 本身则变为\emph{未定义}。对于一个质量为零的载荷，“它挂在哪里”根本
+不存在事实，任何测量也无法提供：所有可观测量对 $\rxy$ 的依赖都只通过乘积 $\mP\rxy$。
+\end{itemize}
+
+因此，以 $(\mP, \rxy)$ 参数化的估计器携带了一个恰好在释放时刻变得不可辨识的方向。若像常规
+的耦合模型那样把 $\rxy$ 固定为先验，情况反而更糟：负载已经离机，力臂却仍留在模型里，于是模型
+预测出一个与测量相矛盾的虚假配平力矩 $(\mP/\mT)\rxy{}T$。优化器要消去这个虚假力矩，唯一剩下的
+办法就是把 $\mP$——从而把 $\mT$——推向甚至推低于空机质量值。这并非假设：在本设计之前的仅估质量
+形式中，释放后的 55 个样本里有 14 个被钉在质量下界上，复原出的复合质量偏低 \SI{2.81}{\percent}。
+“究竟有没有载荷”这一信息被编码进了质量通道，并在那里污染了控制器最需要的那个量。
+
+补救办法是换一组坐标。定义复合刚体绕机体系原点的水平\emph{一阶质量矩}
+\begin{equation}
+\svec \;=\; \begin{bmatrix} s_x \\ s_y\end{bmatrix}
+\;=\; \mP\,\rxy \quad [\si{\kg\meter}].
+\label{eq:sdef}
+\end{equation}
+由于空机质心与机体原点重合，机体对一阶矩没有贡献，整个一阶矩都属于载荷——无论夹爪实际实现
+的抓取偏置是多少。式~\eqref{eq:sdef} 是刚体惯性参数的标准线性参数化~\cite{atkeson1986}：
+运动方程中出现的是\emph{乘积} $\mP\rxy$，而两个因子从不单独出现，这正是应当估计该乘积、而非
+估计偏移量的原因。
+
+\subsection{一阶质量矩驱动的两条通道}\label{sec:model:schannels}
+
+把式~\eqref{eq:sdef} 代入式~\eqref{eq:cxy}，得到第一个收益：
+\begin{equation}
+\cvec \;=\; \frac{\mP}{\mT}\,\rxy
+      \;=\; \frac{1}{\mT}\bigl(\mP\,\rxy\bigr)
+      \;=\; \frac{\svec}{\mT}.
+\label{eq:c_from_s}
+\end{equation}
+质心偏移仅由两个被估状态即可得到。无需任何抓取几何，而且——这一点至关重要—— $\mP$ 不出现在
+分母上，因此当载荷离机时式~\eqref{eq:c_from_s} 仍然良定义且连续。把式~\eqref{eq:c_from_s} 与
+式~\eqref{eq:tcom} 结合，模型所使用的配平力矩为
+\begin{equation}
+\tcom \;=\; \frac{T}{\mT}\begin{bmatrix} -s_y \\ +s_x \\ 0\end{bmatrix}.
+\label{eq:tcom_s}
+\end{equation}
+
+第二条通道是非对角惯量。取式~\eqref{eq:dJfull} 的 $(1,3)$ 元，并利用式~\eqref{eq:mu} 与
+式~\eqref{eq:sdef}，
+\begin{equation}
+J_{xz} \;=\; -\mu\, r_x r_z
+ \;=\; -\frac{\mB\,\mP}{\mT}\, r_x r_z
+ \;=\; -\frac{\mB}{\mT}\,\bigl(\mP r_x\bigr)\, r_z
+ \;=\; -\frac{\mB}{\mT}\, s_x\, r_z ,
+\label{eq:Jxz}
+\end{equation}
+同理 $J_{yz} = -(\mB/\mT)\, s_y\, r_z$。载荷质量被精确抵消：这些项只需要 $\svec$ 与竖直力臂
+$r_z$。
+
+\paragraph{由此得到的分工。}式~\eqref{eq:tcom_s} 与式~\eqref{eq:Jxz} 合起来说明：载荷在转动
+通道上的\emph{全部}特征都由\emph{两个}被估标量 $s_x$、$s_y$ 承载——偏心力矩与非对角惯量都对
+它们线性，不再引入第三个转动未知量。而复合质量只以增益 $1/\mT$ 的形式进入平动方程
+\eqref{eq:trans}，因而是从\emph{速度}通道读出的。力矩残差上两个参数、速度残差上一个参数，这就
+是全部的在线参数化——第~\ref{sec:model:observability}~节把这一分离讲精确，它也正是那两个额外
+决策变量不带来任何额外传感需求的原因。
+
+\subsection{惯量增量的重新表达}\label{sec:model:Jofs}
+
+把式~\eqref{eq:dJfull} 拆成在换坐标下行为各异的三组，会比较方便。定义
+\begin{equation}
+A = \mu\, r_z^2, \qquad
+B_i = \mu\, r_i r_z = \frac{\mB}{\mT}\, s_i\, r_z, \qquad
+C_{ij} = \mu\, r_i r_j \quad (i,j\in\{x,y\}),
+\label{eq:ABC}
+\end{equation}
+于是式~\eqref{eq:dJfull} 的复合惯量写作
+\begin{equation}
+\Jt \;=\; \Jb \;+\; \bigl(A + C_{xx} + C_{yy}\bigr) I_3
+\;-\;
+\begin{bmatrix}
+C_{xx} & C_{xy} & B_x \\
+C_{xy} & C_{yy} & B_y \\
+B_x    & B_y    & A
+\end{bmatrix}.
+\label{eq:JABC}
+\end{equation}
+展开 $(1,1)$ 元可复现 $J_{xx}+\mu(r_y^2+r_z^2)$，展开 $(3,3)$ 元可复现
+$J_{zz}+\mu(r_x^2+r_y^2)$，与式~\eqref{eq:djaxes} 相符。
+
+在新坐标下，这三组的地位截然不同。
+\begin{enumerate}
+\item 由式~\eqref{eq:Jxz}，$B_i$ \emph{只}需要 $\svec$ 与 $r_z$。
+\item $A = (\mB\mP/\mT)\,r_z^2$ 需要 $\mP = \mT-\mB$ 与 $r_z$，二者均可获得：复合质量是被估
+计的，而 $r_z$ 是一个弱先验。不需要任何水平几何信息。
+\item $C_{ij}$ 才是问题所在。把它写到新坐标下，
+\begin{equation}
+C_{ij} \;=\; \mu\, r_i r_j
+\;=\; \frac{\mB \mP}{\mT}\cdot\frac{s_i}{\mP}\cdot\frac{s_j}{\mP}
+\;=\; \frac{\mB}{\mT\,\mP}\; s_i s_j .
+\label{eq:Cdegenerate}
+\end{equation}
+\end{enumerate}
+
+式~\eqref{eq:Cdegenerate} 是这一困难的形式化陈述。当 $\mP\to0$ 而 $\svec$ 尚未被数据驱动到零
+时——这恰恰是释放之后最初零点几秒内的情形——系数 $\mB/(\mT\mP)$ 发散。此时模型允许出现这样一个
+区域：一个质量趋于零的载荷挂在任意长的力臂上。这在物理上荒谬，对一个正在寻找办法解释残差的
+优化器却颇具吸引力，而且其病态方向恰好就是估计器正试图分辨的方向。
+
+因此，实际部署的模型\emph{丢弃} $C_{ij}$ 组，在式~\eqref{eq:JABC} 中令
+$C_{xx}=C_{yy}=C_{xy}=0$。剩下的部分
+\begin{equation}
+\Jt \;=\; \Jb + A\,I_3 -
+\begin{bmatrix} 0 & 0 & B_x \\ 0 & 0 & B_y \\ B_x & B_y & A\end{bmatrix},
+\qquad
+\dJ_{xx}=\dJ_{yy}=A=\frac{\mB\,\mP}{\mT}\,r_z^2 ,
+\label{eq:Jdeployed}
+\end{equation}
+不含任何需要把 $\mP$ 与 $\rxy$ 分别获知的项。其代价可以精确量化：滚转增量在
+$\mu(r_y^2+r_z^2)$ 中损失了 $C_{yy}=\mu r_y^2$，相对误差为
+\begin{equation}
+\frac{C_{yy}}{A + C_{yy}} = \frac{r_y^2}{r_z^2+r_y^2},
+\label{eq:Cerror}
+\end{equation}
+在式~\eqref{eq:numbers} 的平台几何下（$r_y=\SI{0.109}{\meter}$, $r_z=\SI{-0.47}{\meter}$）
+为 \SI{2.6}{\percent}。这就是从模型中剔除一个退化方向所付的代价，换来的则是一套释放后行为
+适定的形式。对合成抓取--释放序列的离线回放使这一取舍变得具体：保留 $C_{ij}$ 会使复合质量估计
+在释放后单调爬升到 \SI{3.17}{\kg} 且不再回落，$s_y$ 逐帧变号；而式~\eqref{eq:Jdeployed} 的
+简化模型则稳定在空机质量的 \SI{-0.34}{\percent} 处，$\svec$ 与 $\dJ$ 一同衰减，且不触界。
+
+\subsection{惯量杠杆与冻结系数}\label{sec:model:Amode}
+
+去掉 $C_{ij}$ 消除了质量与几何之间的一处病态耦合，但并非唯一的一处。剩下的 $A$ 项仍然对
+$\mP$ 线性，这就足以给优化器在质量通道上留下第二根杠杆。
+
+其机理如下。设释放后短暂地残留了一个虚假的水平偏移 $c_y$。它会产生一个预测的滚转角加速度，
+其量级为
+\begin{equation}
+\bigl|\dot\omega_x^{\text{ghost}}\bigr| \;\approx\; \frac{|c_y|\,T}{J_{xx} + A(\mP)},
+\label{eq:ghost}
+\end{equation}
+而测量与之矛盾，因为真实飞行器并没有在滚转。分子是有界的，因为
+$\lVert\cvec\rVert\le\lVert\rxy\rVert$ 是一条几何限制。然而分母随 $\mP$ 线性增长，而且增长很快：
+$r_z^2=\SI{0.22}{\meter\squared}$ 约为 $J_{xx}=\SI{0.0142}{\kg\meter\squared}$ 的十五倍。
+\emph{因此，增大质量估计就能稀释掉那个虚假力矩。}只要由此消去的转动残差超过由此制造的平动残差，
+优化器就会这么做——在 \SI{0.3}{\kg} 释放的离线回放中它正是如此：把 $\hat m$ 推到 \SI{3.17}{\kg}
+（$+\SI{53}{\percent}$），并接受 \SI{-3.4}{\meter\per\second\squared} 的平动不一致，以压低角
+残差。同一种病还有第二个出口：当下界起作用时，它转而把估计压到 $m_{\min}$ 上。无论哪种方式，
+质量都被征用成了一个几何旋钮。
+
+因此，实现中用上一时间窗收敛得到的质量估计 $\hat m^{-}$ 来计算 $A$，并将其作为参数提供给当前
+一次求解，而不是由决策变量算出：
+\begin{equation}
+A \;=\; \frac{\mB\,\bigl(\hat m^{-}-\mB\bigr)^{+}}{\hat m^{-}}\; r_z^2,
+\qquad
+\frac{\partial A}{\partial \mT}\Big|_{\text{window}} = 0 .
+\label{eq:Afrozen}
+\end{equation}
+在单次求解内部 $A$ 于是是一个常数，上一段所述的梯度通路随之消失；而在两次求解之间，它按
+\SI{10}{\hertz} 的时间窗速率刷新，因此其数值会以一个时间窗的滞后继续跟随真实质量。
+
+表~\ref{tab:amode} 列出了实现所支持、并将在第~\ref{ch:evaluation}~章中比较的四种 $A$ 的处理
+方式。它们在两个彼此独立的方面有所不同：是否切断导数，以及所保留的数值是否正确。只有滞后形式
+同时满足两者，它也是部署时的默认选项。
+
+\begin{table}[ht]
+\centering
+\caption{惯量系数 $A$ 的各种处理方式。切断导数消除了式~\eqref{eq:ghost} 的梯度通路；保留正确
+的数值则是另一项独立的要求，后两种形式不满足该要求。}
+\label{tab:amode}
+\small
+\begin{tabular}{@{}llll@{}}
+\toprule
+处理方式 & $A$ 的计算来源 & $\partial A/\partial \mT$ & 保留的数值 \\
+\midrule
+实时（live） & 决策变量 $\mT$ & 非零 & 精确 \\
+滞后（部署默认） & 上一次解 $\hat m^{-}$ & 零 & 精确到一个时间窗 \\
+包络（envelope） & 载荷包络 $\mP^{\mathrm{env}}$ & 零 & 偏差为 $\mP^{\mathrm{env}}/\mP$ 倍 \\
+略去（omitted） & ---（$A\equiv0$） & 零 & 为零；仅用于诊断 \\
+\bottomrule
+\end{tabular}
+\\[4pt]
+\footnotesize 相应的实现配置项列于附录~A。
+\end{table}
+
+\subsection{光滑正部}\label{sec:model:smoothpos}
+
+上文有两处表达式用到 $\mP=(\mT-\mB)^{+}$，而质量决策变量被允许略低于 $\mB$，以便为标定误差
+留出余地。硬性的 $\max(\cdot,0)$ 在原点不可微，这会使高斯--牛顿步恰好在 $\mP$ 接近零、也即
+作出释放判决的区间内发生抖振。因此实现中采用光滑正部
+\begin{equation}
+\mP^{+} \;=\; \tfrac{1}{2}\Bigl(\Delta + \sqrt{\Delta^2+\varepsilon^2}\Bigr),
+\qquad \Delta = \mT-\mB, \quad \varepsilon=\SI{0.02}{\kg},
+\label{eq:smoothpos}
+\end{equation}
+它满足 $\mP^{+}\ge \tfrac{\varepsilon}{2}>0$，是光滑的，并且处处与 $\max(\Delta,0)$ 相差不超过
+$\varepsilon/2$。正性的意义不止于光滑：负的 $\mP$ 会使式~\eqref{eq:ABC} 中 $\mu<0$，进而可能
+使 $\Jt$ 不定，此时式~\eqref{eq:rot} 中的 $\Jt^{-1}$ 就会发散。
+
+\section{物理输入的模型无关重构}\label{sec:model:phys}
+
+式~\eqref{eq:trans} 与式~\eqref{eq:rot} 中出现的推力与力矩必须为估计器所知。它们由实测转速
+$\omega_i$、已知的旋翼位置 $(x_i,y_i)$ 与旋向 $d_i\in\{\pm1\}$，经由二次旋翼模型
+$F_i = k_f \omega_i^2$ 重构而来：
+\begin{equation}
+\Tphys = \sum_i F_i, \qquad
+\tauphys =
+\begin{bmatrix}
+\sum_i y_i F_i \\[2pt]
+-\sum_i x_i F_i \\[2pt]
+-k_m \sum_i d_i F_i
+\end{bmatrix},
+\label{eq:phys}
+\end{equation}
+其中 $|x_i|=|y_i|=\SI{0.174}{\meter}$，$k_f=\SI{8.55e-6}{\newton\second\squared}$，偏航反扭
+系数 $k_m=\SI{0.016}{\meter}$。力矩的前两个分量是力臂乘积；第三个是气动反扭矩，正比于旋翼拉力
+并与该旋翼自身的旋向相反。
+
+\paragraph{这是一个力旋量（wrench），不是状态估计。}式~\eqref{eq:phys} 给出的是\emph{执行机构
+所产生}的力旋量。它有意排除了 $\Jt\dot{\bm\omega}$ 与旋翼陀螺项，而这恰恰使它可以充当估计器
+的已知输入 $u^{\mathrm{phys}}$，而不是成为对状态的第二个、与之竞争的估计。转速以
+\SI{250}{\hertz} 采样，并在每个 \SI{10}{\hertz} 的估计区间内取平均，这与式~\eqref{eq:trans}
+和式~\eqref{eq:rot} 的零阶保持离散化是一致的。
+
+\paragraph{为什么不能使用指令输入。}设控制器由假定质量 $\tilde{m}$ 计算推力指令，使得悬停时
+$T_{\mathrm{cmd}} = \tilde{m} g$。把 $T_{\mathrm{cmd}}$ 代入式~\eqref{eq:trans} 并解出质量，
+得到 $\mT = T_{\mathrm{cmd}} / g = \tilde{m}$——而且对\emph{任意} $\tilde{m}$ 都成立。该关系
+被恒等满足，残差不携带任何信息，质量因而不可观：估计结果只会复述控制器原本就相信的东西。指令
+与旋翼之间的任何求逆误差、饱和或电机滞后也同样不可见。式~\eqref{eq:phys} 打破了这一循环，因为
+转速是一种物理测量，其中不掺入任何模型状态，且取自控制分配与电机动态的下游。这是后文反复出现
+的一条原则：自适应回路必须由一个本身不是自适应产物的信号来馈入。
+
+偏航通道把这一点量化了。在二十批次的飞行记录中，实际执行的滚转与俯仰力矩与控制器意图值吻合
+良好（相关系数中位数 $+0.93$ 与 $+0.70$，斜率 $1.08$ 与 $1.10$），但实际执行的偏航力矩只有
+意图值的 $0.32$ 倍：四旋翼的偏航权限仅来自反扭矩，比其滚转/俯仰权限低一个数量级。以意图偏航
+力矩馈入的估计器，所收到的力矩比飞行器实际经历的大三倍。由式~\eqref{eq:phys} 重构全部四个分量，
+便消除了估计器还能窥知控制器所思所想的最后一处。
+
+\paragraph{推力--油门求逆与执行机构包络。}同一套旋翼模型定义了飞行器实际能够产生什么，因而也
+定义了控制器的输入约束集。飞控接受归一化油门 $\eta$，电调先将其仿射映射为转速，然后才应用二次
+推力律：
+\begin{equation}
+\omega(\eta) = \omega_{\min} + \Delta\omega\,\eta,
+\qquad
+T(\eta) = K\,\omega(\eta)^2,
+\qquad K = 4k_f ,
+\label{eq:throttlemap}
+\end{equation}
+其中 $\omega_{\min}=\SI{150}{\radian\per\second}$，
+$\Delta\omega=\SI{850}{\radian\per\second}$。对式~\eqref{eq:throttlemap} 求逆，得到实际下发的
+指令
+\begin{equation}
+\eta(T) = \frac{\sqrt{T/K}-\omega_{\min}}{\Delta\omega},
+\label{eq:throttleinv}
+\end{equation}
+它在任何质量下都是精确的，不同于它所取代的、以悬停点为参考的线性经验式。由于 $\eta$ 被截断到
+$[0.05,\,0.95]$——上限保留了 \SI{5}{\percent} 的指令范围，以便四个旋翼都接近饱和时角速率环仍
+保有差动权限——物理上可达的总推力为
+\begin{equation}
+T \in \bigl[\,T(0.05),\; T(0.95)\,\bigr] = [\,\SI{1.27}{\newton},\; \SI{31.35}{\newton}\,].
+\label{eq:envelope}
+\end{equation}
+第~\ref{sec:model:ctrl}~节将式~\eqref{eq:envelope} 用作最优控制问题的推力箱式约束。这一点
+比表面上看更重要：早先的实现使用 $[\SI{0.5}{\newton},\,2\mB g=\SI{40.5}{\newton}]$，这是一个
+由飞行器\emph{重量}而非其执行机构导出的箱式约束，因而把可用推力高估了 \SI{29}{\percent}。按
+飞行器并不具备的权限去做规划并不是一种保守的错误：多出来的那部分会被式~\eqref{eq:throttleinv}
+中的截断悄悄抹去，于是规划出的恢复加速度从未真正兑现，跟踪误差增大，下一次求解便索取更多的
+推力。
+
+\section{估计：把质量与一阶质量矩作为在线自由度}\label{sec:model:mhe}
+
+\subsection{增广状态与估计器形式}\label{sec:model:mheform}
+
+移动时域估计器（moving horizon estimation, MHE）把两个载荷状态都增广进状态向量，
+\begin{equation}
+x_{\mathrm{aug}} = \bigl[\,x;\; \mT;\; s_x;\; s_y\,\bigr] \in \mathbb{R}^{16},
+\qquad \dot{\mT} = 0, \quad \dot{\svec}=\bm{0},
+\label{eq:xaug}
+\end{equation}
+并令二者在整个时域上保持常值，从而使一窗测量所约束的是各自的单一取值、而不是一条自由轨迹。过程
+噪声 $\bm{w} \in \mathbb{R}^{13}$ 只加在物理状态上；给载荷通道加噪声会允许它们在窗内漂移，
+从而瓦解掉恰恰使估计有意义的那条约束。第~\ref{ch:framework}~章给出该优化问题的数值形式、权重
+与边界；本节只说明这些状态的含义，以及哪个残差辨识哪个量。
+
+几何量\emph{不}出现在决策向量中。估计器的运行时参数向量携带重构出的力旋量、式~\eqref{eq:Afrozen}
+所需的上一窗质量估计，以及那个弱的竖直力臂：
+\begin{equation}
+p_{\mathrm{MHE}} = \bigl[\, \Tphys;\; \tauphys;\; \hat m^{-};\; \cdot\;;\; r_z \,\bigr] \in \mathbb{R}^{7}.
+\label{eq:pmhe}
+\end{equation}
+在模型内部，$\cvec$ 与 $\Jt$ 由决策变量经式~\eqref{eq:c_from_s} 与式~\eqref{eq:Jdeployed} 求得，
+因此载荷状态的平动雅可比与转动雅可比在单次求解内部是相互一致的。这是一个结构性的要点，而非
+数值上的要点：若某种实现在优化器\emph{之外}、用上一次的质量估计来计算 $\cvec$ 与 $\dJ$，就会
+闭合出一个外层不动点迭代，
+\begin{equation*}
+\hat m \;\longrightarrow\; \dJ,\ \cvec
+\;\longrightarrow\; \text{姿态模型}
+\;\longrightarrow\; \hat m ,
+\end{equation*}
+它带有正反馈，且没有任何代价项来仲裁。观察到该回路在轻载荷下会锁定到自洽但错误的解上。
+
+\subsection{哪个残差辨识什么}\label{sec:model:observability}
+
+估计器的阶段代价建立在同一个残差之上，本节其余部分都按它的分段来称呼。记 $\bm y_i$ 为窗内
+第 $i$ 个阶段的里程计量测，$x_i$ 为估计器自身轨迹在该阶段的物理状态部分，则测量残差为
+\begin{equation}
+\bm e_i \;=\; \bm y_i - x_i
+\;=\; \bigl[\,\bm e^p_i;\ \bm e^v_i;\ \bm e^q_i;\ \bm e^{\omega}_i\,\bigr]
+\in \mathbb{R}^{13},
+\label{eq:mheresid}
+\end{equation}
+并按 Bryson 准则以 $R=\mathrm{diag}(\sigma^{-2})$ 加权，其中
+$\sigma_v=\SI{0.05}{\meter\per\second}$，$\sigma_{\omega}=\SI{0.02}{\radian\per\second}$。
+全文所称的\emph{速度残差}与\emph{角速率残差}，就是这同一个向量的 $\bm e^v$ 段与
+$\bm e^{\omega}$ 段，并非两个独立的量。
+
+值得留意式~\eqref{eq:mheresid} 中\emph{没有}什么：没有加速度。轨迹 $x_i$ 是在已知输入
+$u^{\mathrm{phys}}$ 的驱动下、自窗口起点前向积分得到的，因此比较发生在速度与速度之间，从不
+发生在“实测加速度”与“模型加速度”之间。对里程计速度做微分会把噪声放大 $1/\Delta t = 10$ 倍，
+使 $\sigma_v$ 变成 \SI{0.5}{\meter\per\second\squared}——恰好就是待估效应本身的量级。
+式~\eqref{eq:telescope} 的裂项恒等式为种子实现了同样的规避。
+
+两个载荷状态经由互不相交的通道进入模型，这正是增广第二个状态在传感代价上几乎免费的原因。
+
+复合质量以 $1/\mT$ 的形式进入平动方程~\eqref{eq:trans}，因而主要由\emph{速度}残差辨识。不过
+它在转动通道中并非缺席：它通过式~\eqref{eq:tcom_s} 中的 $\cvec=\svec/\mT$，以及式~\eqref{eq:ABC}
+中的非对角项 $B_i=(\mB/\mT)s_i r_z$ 出现在那里，而这两者都没有被冻结。因此式~\eqref{eq:Afrozen}
+所移除的并不是 $\dot{\bm{\omega}}$ 对质量的全部依赖，而只是被证实遭到滥用的那一条：$A$ 项位于
+\emph{分母} $J_{xx}+A$ 中，并带有 $r_z^2/J_{xx}\approx15$ 的放大倍数，所以抬高 $\hat m$ 能够
+显著地压低角残差。留下的那些通路都是一阶且不被放大的——$\mT$ 的相对误差只产生 $\tcom$ 中同等的
+相对误差——它们给不了优化器同等量级的杠杆。
+
+一阶质量矩 $\svec$ 完全不出现在式~\eqref{eq:trans} 中。它只经由式~\eqref{eq:tcom_s} 的配平力矩
+与式~\eqref{eq:Jxz} 的非对角惯量进入模型，因而只由\emph{角速率}残差辨识。
+
+两个残差都是同一份里程计测量的分量。于是第二个状态不带来任何额外的传感需求——只增加两个决策
+变量以及它们所带来的求解时间，其量化见第~\ref{ch:evaluation}~章。两个量都不是被直接测量的：
+它们都是作为“使重构输入 $u^{\mathrm{phys}}$ 与观测到的 $\bm v$、$\bm\omega$ 轨迹相调和”的
+窗内常值而被复原出来的。
+
+值得记录的是，为什么前一代设计无法获得这种分离。当转动通道以 $(\mP,\bm r_{xy})$ 参数化、且
+$\bm r_{xy}$ 取为固定先验时，角速率残差真正辨识的量是乘积 $\mP\bm r_{xy}$——于是假定的
+$\bm r_{xy}$ 中的误差就被直接转化为质量误差。数值上，在偏心悬停工况下，把假定力臂减半会使质量
+估计偏置 \SI{+14.4}{\percent}，将其置零则偏置 \SI{+41.6}{\percent}；而 $r_z$ 上
+\SI{\pm33}{\percent} 的误差使质量估计改变了 \SI{0.00}{\percent}。增广该乘积彻底消除了第一种
+敏感性；第二种敏感性本就不存在，这也是 $r_z$ 可以安全地保留为弱先验的原因。这种不敏感是结构性
+的而非侥幸：$r_z$ 被式~\eqref{eq:tcom} 的叉积湮灭，力矩通道本就不含关于它的信息，再多的激励
+也辨识不出它。为偏心悬停窗计算的
+Cramér--Rao 下界从另一侧讲述了同一个故事：当转动通道不携带质量信息时，下界为
+$\sigma_m=\SI{0.0109}{\kg}$；当两个通道耦合时为 $\sigma_m=\SI{0.0011}{\kg}$，其中
+\SI{94}{\percent} 的信息经由转动通道到来。
+
+\subsection{无先验初始化}\label{sec:model:seed}
+
+估计器需要一个质量通道的初始迭代点。提供标定得到的空机质量等于给出了一个关于答案的先验；本实现
+转而从测量构造种子值。
+
+最简单的形式是在式~\eqref{eq:vbal} 中令 $a_z=0$、$\cos\theta=1$ 得到的悬停近似，
+\begin{equation}
+m^{(0)}=\operatorname{clip}\!\left(\frac{\Tphys}{g},\; \underline m,\; \overline m\right),
+\label{eq:massseed}
+\end{equation}
+它是无先验的，因为 $\Tphys$ 来自式~\eqref{eq:phys}，不涉及任何模型状态。其弱点在于只在悬停附近
+有效：在 \SI{4}{\meter\per\second} 的“8”字轨迹上，瞬时比值 $\Tphys/g$ 会在真实质量的
+\SI{-42}{\percent} 到 \SI{+30}{\percent} 之间摆动，因为总推力同时还在提供向心加速度，并且已偏离
+竖直方向。
+
+因此，部署所用的种子使用整个时间窗而不是单个采样。把精确的竖直平衡式~\eqref{eq:vbal} 在窗内
+$N$ 个阶段上求和，
+\begin{equation}
+\mT \sum_{i=0}^{N-1}\bigl(g + a_{z,i}\bigr) \;=\; \sum_{i=0}^{N-1} T_i \cos\theta_i ,
+\label{eq:winbal1}
+\end{equation}
+并用如下的裂项求和恒等式消去加速度，
+\begin{equation}
+\sum_{i=0}^{N-1} a_{z,i}
+= \sum_{i=0}^{N-1} \frac{v_{z,i+1}-v_{z,i}}{\Delta t}
+= \frac{v_{z,N}-v_{z,0}}{\Delta t},
+\label{eq:telescope}
+\end{equation}
+便得到一个完全不需要对速度信号做数值微分的种子：
+\begin{equation}
+m^{(0)} \;=\; \frac{\displaystyle\sum_{i=0}^{N-1} T_i \cos\theta_i}
+                   {\displaystyle N g + \frac{v_{z,N}-v_{z,0}}{\Delta t}} .
+\label{eq:winbal}
+\end{equation}
+其中只有窗口两端的速度进入表达式，因此该估计不受逐采样噪声影响，而有限差分加速度会放大这种
+噪声；式~\eqref{eq:costheta} 的倾斜因子 $\cos\theta_i$ 补回了式~\eqref{eq:massseed} 所丢弃的
+竖直分量；并且所有输入要么是 $\Tphys$、要么是里程计，因此种子仍与估计器自身的状态解耦。当窗口
+尚未填满、或式~\eqref{eq:winbal} 的分母退化时，实现会退回到式~\eqref{eq:massseed}，再退回到一个
+中性的箱内取值。
+
+\paragraph{初值与先验之别。}这一区分对本论文的论断很重要，也很容易被混为一谈。
+式~\eqref{eq:winbal} 在求解器中进入两处：SQP 的初始迭代点，以及到达代价（arrival cost）的均值。
+前者只影响迭代次数，绝不影响最优解。后者按其权重比例影响最优解，而该权重被刻意设得极低，以至于
+对应的标准差达到数千克——远宽于飞行器可能承载的质量范围。因此种子只影响优化器从哪里出发，而不
+影响它收敛到哪里。反复求解失败后的重新初始化也使用同一表达式，理由相同：从一个测量量重启，比
+从一个可能已被污染的先前估计重启更安全。
+
+\section{控制：参数如何重新标定代价的中心}\label{sec:model:ctrl}
+
+非线性模型预测控制器（nonlinear model predictive control, NMPC）把这些参数作为运行时数值携带，
+\begin{equation}
+p_{\mathrm{NMPC}} = \bigl[\, x_{\mathrm{ref}}(13);\; \mT;\; \dJ;\; \cvec(2) \,\bigr] \in \mathbb{R}^{17},
+\label{eq:pnmpc}
+\end{equation}
+即三个载荷量，加上各阶段代价所参照的参考轨迹。在 $N$ 个阶段的预测时域上，它求解
+\begin{align}
+\min_{u_{0:N-1}} \quad
+& \sum_{k=0}^{N-1} \Bigl( \bigl\| e_{\mathrm{track}}(x_k, x_{\mathrm{ref},k}) \bigr\|^2_{Q}
++ \bigl\| u_k - u_{\mathrm{hover}}(p) \bigr\|^2_{R} \Bigr) \nonumber \\
+& \qquad + \bigl\| e_{\mathrm{track}}(x_N, x_{\mathrm{ref},N}) \bigr\|^2_{P} \nonumber \\
+\mathrm{s.t.} \quad
+& x_{k+1} = F(x_k, u_k;\, p_{\mathrm{NMPC}}), \nonumber \\
+& \underline{T} \le T_k \le \overline{T}, \quad
+  |\tau_{k,i}| \le \overline{\tau}_i ,
+\label{eq:nmpc}
+\end{align}
+只施加 $u_0$ 并在下一步重新求解，其中推力箱式约束取自执行机构包络式~\eqref{eq:envelope}。
+
+\subsection{求解器实际积分的预测模型}\label{sec:model:predmodel}
+
+式~\eqref{eq:nmpc} 中的映射 $F$ 是本章所装配的连续模型的显式 Runge--Kutta 离散化（四阶，每
+阶段一步），其中各符号已被替换为估计得到的参数值。展开来写，求解器所微分的右端项为
+\begin{align}
+\dot{\bm p} &= \bm v, \nonumber\\[2pt]
+\dot{\bm v} &= \frac{1}{\mT}\Bigl(R(\bm q)\,\ev\,T - k_d\,\bm v\Bigr) - g\,\ev,
+\nonumber\\[2pt]
+\dot{\bm q} &= \tfrac{1}{2}\,\Xi(\bm q)\,\bm\omega, \nonumber\\[2pt]
+\dot{\bm\omega} &= \Jt^{-1}\Bigl(
+  \bm\tau
+  + \underbrace{\begin{bmatrix} -c_y T \\ +c_x T \\ 0\end{bmatrix}}_{\tcom(\cvec)}
+  - \bm\omega \times \Jt\,\bm\omega \Bigr),
+\quad
+\Jt = \mathrm{diag}\bigl(J_{xx}+\dJ,\, J_{yy}+\dJ,\, J_{zz}\bigr),
+\label{eq:predmodel}
+\end{align}
+它在 $N=20$ 个阶段、$\Delta t = \SI{50}{\milli\second}$（即 \SI{1}{\second} 的前视）上积分，并
+以 \SI{10}{\hertz} 重解。式~\eqref{eq:predmodel} 中没有任何本节新引入的东西——它就是
+式~\eqref{eq:kin}、\eqref{eq:quat}、\eqref{eq:trans} 与 \eqref{eq:rot}，其中 $\cvec$ 由
+式~\eqref{eq:c_from_s} 取 $\svec/\mT$、$\dJ$ 由式~\eqref{eq:Jdeployed} 给出——而这正是要点：
+$(\mT, \dJ, \cvec)$ 这三个参数是两次求解之间\emph{唯一}发生变化的量，且各自只有一个入口；
+图~\ref{fig:paramflow} 追踪了它们各自从何而来、又流向何处。
+
+控制器的模型与估计器的模型之间有一处不对称，记号上看不出来，须明说。估计器积分的是
+式~\eqref{eq:Jdeployed} 的完整惯量，含非对角项 $B_x$、$B_y$；控制器拿到的 $\dJ$ 只是
+式~\eqref{eq:Jdeployed} 里那个标量 $A$——式~\eqref{eq:pnmpc} 也只携带这一个数——并用上面那个对角
+的 $\Jt$ 做预测。两侧的取舍都是刻意的。对控制器而言，在式~\eqref{eq:numbers} 的几何下
+$B_{x,y}/A = r_{x,y}/r_z$ 为 $0.23$，而被丢掉的这些项耦合的是滚转/俯仰轴与偏航轴，偏航轴上可用
+力矩与指令角速率都比滚转/俯仰小一个数量级；而换用稠密的 $\Jt$，代价是每次 SQP 迭代的每个阶段
+内部都要做一次 $3\times 3$ 求逆。估计器则不能做同样的简化，因为 $B_{x,y}$ 正是 $\svec$ 得以可观
+的仅有两条通路之一（式~\eqref{eq:Jxz}）。
+
+\paragraph{力矩如何映射成力。}式~\eqref{eq:predmodel} 的输入 $u = [T;\,\bm\tau]$ 是一个力旋量，
+不是一组电机指令。它如何映射到力有闭式答案，因为式~\eqref{eq:phys} 本身就是从四个旋翼拉力到
+力旋量的\emph{线性}映射：控制分配就是它的逆。取第~\ref{sec:model:phys}~节的旋翼几何——X 构型，
+$|x_i| = |y_i| = l = \SI{0.174}{\meter}$，旋向 $d_i \in \{\pm 1\}$——该映射为
+\begin{equation}
+\begin{bmatrix} T \\ \tau_x \\ \tau_y \\ \tau_z \end{bmatrix}
+=
+\underbrace{
+\begin{bmatrix}
+1 & 1 & 1 & 1 \\
+-l & \phantom{-}l & \phantom{-}l & -l \\
+-l & \phantom{-}l & -l & \phantom{-}l \\
+-k_m & -k_m & \phantom{-}k_m & \phantom{-}k_m
+\end{bmatrix}}_{M}
+\begin{bmatrix} F_1 \\ F_2 \\ F_3 \\ F_4 \end{bmatrix},
+\qquad F_i = k_f \omega_i^2 .
+\label{eq:mixer}
+\end{equation}
+$M$ 的各行彼此正交，因此
+$M^{-1} = M^{\!\top}\mathrm{diag}\bigl(\tfrac{1}{4}, \tfrac{1}{4l^2},
+\tfrac{1}{4l^2}, \tfrac{1}{4k_m^2}\bigr)$，分配式化为四个解耦项之和，
+\begin{equation}
+F_i \;=\; \frac{T}{4}
+ \;+\; \frac{y_i}{4l^2}\,\tau_x
+ \;-\; \frac{x_i}{4l^2}\,\tau_y
+ \;-\; \frac{d_i}{4k_m}\,\tau_z .
+\label{eq:mixerinv}
+\end{equation}
+
+式~\eqref{eq:mixerinv} 的系数正是偏航通道特殊之处的来源。由于 $|x_i| = |y_i| = l$，单位滚转或
+俯仰力矩需要 $1/(4l) = \SI{1.44}{\per\meter}$ 的差动拉力，而单位偏航力矩需要
+$1/(4k_m) = \SI{15.6}{\per\meter}$——相差 $10.9$ 倍。在 \SI{20}{\newton} 的悬停推力下，每个
+旋翼承担 \SI{5}{\newton}，距式~\eqref{eq:envelope} 所蕴含的单旋翼上限 \SI{7.84}{\newton} 还有
+\SI{2.84}{\newton} 余量；这份余量能换来 \SI{1.98}{\newton\meter} 的滚转权限，却只能换来
+\SI{0.18}{\newton\meter} 的偏航权限。对照式~\eqref{eq:nmpc} 的箱式约束
+$\overline\tau_{x,y} = \SI{0.5}{\newton\meter}$ 与 $\overline\tau_z = \SI{0.2}{\newton\meter}$，
+滚转/俯仰界保守了约四倍，而偏航界则略微\emph{偏乐观}。同一个比值也解释了
+第~\ref{sec:model:phys}~节中实测的 $0.32$ 偏航斜率：控制器经常索取分配环节根本付不出的偏航力矩。
+
+\paragraph{分配实际跑在哪里。}在部署的级联结构中，ROS 节点并不计算式~\eqref{eq:mixerinv}。
+以力的形式离开最优控制问题的只有总推力——它由式~\eqref{eq:throttleinv} 折算为归一化油门——与它
+同行的不是 $\bm\tau$，而是从预测状态轨迹第二个阶段读出的机体角速率指令 $\bm\omega_1$。力矩
+$\bm\tau$ 留在最优控制问题内部，其作用是塑造那条预测轨迹；真正实现它的是飞控的角速率环及飞控
+自己的分配器。这一分工是刻意的：角速率环的带宽是 \SI{10}{\hertz} 的求解器无法企及的，而把分配
+留在飞控上，也让饱和处理留在了紧挨硬件的位置。这同时也正是估计器为什么要从实测转速出发、按
+\emph{正}方向计算式~\eqref{eq:mixer}，而不去读求解器的 $\bm\tau$：把 $M$ 作用在电机实际做出的
+动作上得到的是一个测量，而来自最优控制问题的 $\bm\tau$ 只是一个意图，且
+第~\ref{sec:model:phys}~节表明二者在偏航上相差三倍。至于内环剩下的那段差距，由
+第~\ref{sec:frame:omegascale}~节推导的机体角速率缩放来适配。
+
+\subsection{为什么输入基线必须跟随参数}\label{sec:model:hover}
+
+式~\eqref{eq:nmpc} 的第二项惩罚的是输入相对某个\emph{基线} $u_{\mathrm{hover}}$ 的偏差，而该
+基线在每次求解时都由实时参数重新计算，而不是在生成求解器时被固化：
+\begin{equation}
+T_h = \mT\, g,
+\qquad
+u_{\mathrm{hover}} = \bigl[\, T_h,\; c_y T_h,\; -c_x T_h,\; 0 \,\bigr]^{\!\top}.
+\label{eq:hover}
+\end{equation}
+
+直接惩罚 $\|u\|^2_R$ 会把仅仅为了留在空中所需的推力也当作应被最小化的开销；基线把惩罚重新
+以维持平衡所需的输入为中心，于是 $R$ 只惩罚真正的控制努力。这一点是标准做法~\cite{rawlings2017mpc}。
+不标准的是：这里的基线是\emph{被估计}参数的函数，而下文会量化把它弄错的后果。
+
+考虑基线\emph{过时}时会发生什么。设 $u_{\mathrm{hover}}$ 是按空载质量算的，而飞行器正携带
+一个包裹。此时代价会持续把推力拉向低于平衡所需的数值，最优解停在边际跟踪代价与边际基线偏差
+代价相平衡之处——即一个非零的稳态误差。这一行为有一个反直觉的特征，可据此在实践中辨认它：
+\emph{增大 $R$ 会让误差变得更糟}，因为 $R$ 恰恰就是错误基线拉扯的强度。这类偏差无论怎样调权重
+都消不掉；只有修正基线才行。而且其影响并不轻微——在重载荷配空机基线的情况下，观察到跟踪误差
+停滞在 \SI{0.85}{\meter} 以上而不收敛。
+
+式~\eqref{eq:hover} 的力矩项恰好就是式~\eqref{eq:tcom} 中的 $-\tcom$，它们存在的理由相同。带
+偏心载荷悬停需要一个常值配平力矩（第~\ref{sec:model:tcom}~节）；不承认这一点的代价函数会把力矩
+拉向零，并在姿态通道中产生同一类稳态偏差。这两个方程互补，且缺一不可：式~\eqref{eq:tcom} 告诉
+\emph{模型}这个力矩存在，而式~\eqref{eq:hover} 告诉\emph{目标函数}它是必要的。
+
+\subsection{内环带宽}\label{sec:model:gain}
+
+外环的模型一致性无法恢复内环带宽。运行在飞控上的角速率控制器是按空机整定的；使滚转与俯仰惯量
+成倍增大的载荷会降低其有效带宽，而对重的偏心载荷，由此产生的姿态振荡会一直增长到力矩饱和为止。
+相关的比值是
+\begin{equation}
+\kappa \;=\; \frac{J_{xx} + \dJ}{J_{xx}},
+\label{eq:gain}
+\end{equation}
+式~\eqref{eq:numbers} 给出它在所考虑的最重载荷下为 $5.30$：该载荷正处在这架机体上仅靠内环重整
+所能吸收的上限。与力矩预算式~\eqref{eq:trimtorque} 合在一起，这就定义了一条关于载荷质量与偏心
+度的可行边界，第~\ref{ch:evaluation}~章会对其做实验刻画。
+
+前一代实现是通过在挂载时改写飞控的角速率环增益来施加 $\kappa$ 的。部署的实现不再触碰那些参数，
+而是改为缩放机体角速率\emph{指令}，这使自适应保持在 ROS 层内、保持连续、并且可逆。其机理在
+第~\ref{sec:frame:omegascale}~节推导。
+
+\section{什么被估计、什么被导出、什么不被估计}\label{sec:model:whynot}
+
+表~\ref{tab:params} 记录了模型中每一个参数的身份。两个标量是在线自由度；其余的要么由它们经本章
+的代数导出，要么为机体一次性标定所得，要么保留为一个其误差已被证明无关紧要的弱先验。
+
+\begin{figure}[tbp]
+\centering
+\begin{tikzpicture}[
+  x=1cm,y=1cm,font=\scriptsize,
+  nd/.style={draw=gray!70,rounded corners=1.5pt,align=center,inner sep=3pt,
+             font=\scriptsize},
+  key/.style={nd,draw=black,line width=0.7pt,fill=gray!15},
+  der/.style={nd,fill=gray!4},
+  gh/.style={nd,draw=gray!50,text=gray!40!black},
+  ar/.style={-{Latex[length=1.5mm]},semithick,gray!25!black},
+  ln/.style={semithick,gray!25!black},
+  bus/.style={-{Latex[length=2mm]},line width=0.9pt,gray!15!black},
+  dar/.style={-{Latex[length=1.4mm]},dashed,thin,gray!55!black},
+  lb/.style={font=\tiny,align=center,inner sep=1.2pt},
+  lane/.style={draw=gray!45,dashed,rounded corners=2.5pt,inner sep=3mm},
+  hd/.style={font=\tiny\bfseries,text=gray!50!black,inner sep=1.2pt},
+]
+
+%========================= band 1: measured =========================
+\node[nd]  (rot) at (2.0,0)   {旋翼转速 $\omega_i$\\ \SI{250}{\hertz}};
+\node[der] (wr)  at (5.8,0)   {$\Tphys,\ \tauphys$\\ \eqref{eq:phys}};
+\node[nd]  (odo) at (10.6,0)  {里程计\\ $\bm p,\bm v,\bm q,\bm\omega$};
+\draw[ar] (rot) -- node[lb,above]{$M$ 正向} (wr);
+\begin{scope}[on background layer]
+  \node[lane,fit=(rot)(wr)(odo)] (L1) {};
+\end{scope}
+\node[hd,anchor=south west] at ([xshift=1mm]L1.north west) {可测量——位于控制分配下游，与任何模型状态无关};
+
+%========================= band 2: estimated ========================
+\node[nd,text width=47mm] (res) at (6.6,-2.1)
+  {测量残差 \eqref{eq:mheresid}\\ $\bm e_i=\bm y_i-x_i\in\mathbb{R}^{13}$};
+\node[nd]  (vres) at (4.8,-3.35) {速度残差\\ $\bm e^v_i$};
+\node[nd]  (wres) at (8.4,-3.35) {角速率残差\\ $\bm e^{\omega}_i$};
+\node[key] (mT)   at (4.8,-4.5)  {$\mT$};
+\node[key] (sv)   at (8.4,-4.5)  {$\svec=(s_x,s_y)$};
+\node[gh]  (seed) at (1.5,-4.5)  {种子\\ \eqref{eq:winbal}};
+\node[gh,text width=26mm]  (prior)at (12.7,-3.9) {固定输入\\ $r_z$ 弱先验\\ $\mB,\Jb$ 标定};
+\draw[ar] (wr.south) -- (res.north -| wr.south);
+\node[lb,anchor=east] at (5.65,-0.95) {$u^{\mathrm{phys}}$（输入）};
+\draw[ar] (odo.south) -- ++(0,-1.05) -| (res.north -| 8.6,0);
+\node[lb,anchor=west] at (10.75,-0.95) {$\bm y_i$（量测）};
+\draw[ar] (res.south -| vres.north) -- (vres.north);
+\draw[ar] (res.south -| wres.north) -- (wres.north);
+\draw[ar] (vres) -- (mT);
+\draw[ar] (wres) -- (sv);
+\draw[dar] (seed) -- node[lb,above]{仅作\\ 初始迭代点} (mT);
+\begin{scope}[on background layer]
+  \node[lane,fit=(res)(vres)(wres)(mT)(sv)(seed)(prior)] (L2) {};
+\end{scope}
+\node[hd,anchor=south west] at ([xshift=1mm]L2.north west) {被估计——唯一的在线自由度};
+
+\draw[ar] (mT.south) -- (4.8,-5.4);
+\draw[ar] (sv.south) -- (8.4,-5.4);
+\draw[ln] (4.8,-5.4) -- (8.4,-5.4);
+\draw[bus] (6.6,-5.4) -- node[lb,right,pos=0.55]{三个标量，仅此而已} (6.6,-6.4);
+
+%========================= band 3: derived ==========================
+\node[der] (cxy) at (2.5,-7.4)  {$\cvec=\svec/\mT$\\ \eqref{eq:c_from_s}};
+\node[der] (tc)  at (6.1,-7.4)  {$\tcom=\frac{T}{\mT}(-s_y,\,s_x,\,0)$\\ \eqref{eq:tcom_s}};
+\node[der] (dj)  at (9.7,-7.4)  {$\dJ=A(\mT,\mB,r_z)$\\ \eqref{eq:Jdeployed}, 冻结 \eqref{eq:Afrozen}};
+\node[gh]  (jxz) at (12.7,-7.4) {$J_{xz},J_{yz}$ \eqref{eq:Jxz}\\ \emph{仅估计器模型}};
+\draw[ar] (cxy) -- (tc);
+\begin{scope}[on background layer]
+  \node[lane,fit=(cxy)(tc)(dj)(jxz)] (L3) {};
+\end{scope}
+\node[hd,anchor=south west] at ([xshift=1mm]L3.north west) {被导出——刚体代数，无新未知量，无新传感};
+\draw[dar] (prior.south) -- ++(0,-1.5) -| node[lb,pos=0.22,above]{$\to A,\ B_{x,y},\ \Jt$} (dj.north);
+
+\draw[ln] (4.8,-5.4) -- (1.0,-5.4) -- (1.0,-8.6) -- (2.5,-8.6);
+\node[lb,rotate=90,anchor=south] at (0.92,-7.0) {$\mT$ 直接穿过};
+
+\draw[ar] (cxy.south) -- (2.5,-8.6);
+\draw[ar] (dj.south)  -- (9.7,-8.6);
+\draw[ln] (2.5,-8.6) -- (9.7,-8.6);
+\draw[bus] (6.1,-8.6) -- node[lb,right,pos=0.6]
+  {$p_{\mathrm{NMPC}}=[\,x_{\mathrm{ref}};\mT;\dJ;\cvec\,]\in\mathbb{R}^{17}$ \eqref{eq:pnmpc}}
+  (6.1,-9.6);
+
+%========================= band 4: consumed =========================
+\node[nd,text width=54mm,align=left] (mdl) at (4.4,-10.7)
+  {\textbf{预测模型} $F$ \eqref{eq:predmodel}\\[1pt]
+   $1/\mT \to \dot{\bm v}$ \qquad $\tcom(\cvec) \to \dot{\bm\omega}$\\
+   $\Jt(\dJ) \to \dot{\bm\omega}$, 对角};
+\node[nd,text width=44mm,align=left] (cst) at (11.0,-10.7)
+  {\textbf{代价基线} $u_{\mathrm{hover}}$ \eqref{eq:hover}\\[1pt]
+   $T_h=\mT g$\\ 力矩项 $=-\tcom$};
+\begin{scope}[on background layer]
+  \node[lane,fit=(mdl)(cst)] (L4) {};
+\end{scope}
+\node[hd,anchor=south west] at ([xshift=1mm]L4.north west) {被使用——同一组数同时进入约束与目标};
+
+%========================= band 5: actuated =========================
+\node[nd] (eta) at (5.0,-12.7) {油门 $\eta(T)$ \eqref{eq:throttleinv}};
+\node[nd] (w1)  at (5.0,-13.6) {机体角速率 $\bm\omega_1$};
+\node[nd] (px4) at (11.0,-13.15) {PX4 角速率环 $+$ 分配器 \eqref{eq:mixerinv}};
+\draw[ar] (eta.east) -- (px4.west|-eta.east) -- (px4.west);
+\draw[ar] (w1.east)  -- (px4.west|-w1.east)  -- (px4.west);
+\begin{scope}[on background layer]
+  \node[lane,fit=(eta)(w1)(px4)] (L5) {};
+\end{scope}
+\node[hd,anchor=south east] at ([xshift=-1mm]L5.north east) {被执行——$\bm\tau$ 从不离开求解器};
+\draw[ln] (mdl.south) -- ++(0,-0.55) -| (2.2,-12.7);
+\draw[ar] (2.2,-12.7) -- (eta.west);
+\draw[ln] (2.2,-12.7) -- (2.2,-13.6);
+\draw[ar] (2.2,-13.6) -- (w1.west);
+
+%========================= loop closure =============================
+\draw[bus,gray!40!black] (px4.east) -- (14.4,-13.15) -- (14.4,1.55)
+  -- node[lb,above,pos=0.55]{回路经由\emph{测量}闭合，绝不经由控制器的意图} (2.0,1.55) -- (rot.north);
+\end{tikzpicture}
+\caption{一个载荷参数是如何抵达控制器的。窗内的量测与已知输入汇合于同一个
+残差式~\eqref{eq:mheresid}，其 $\bm v$ 段与 $\bm\omega$ 段正是辨识两个加粗决策变量的东西；
+“被导出”一带中的全部量都由它们经第~\ref{sec:model:payload}--\ref{sec:model:moment}~节的代数
+生成，既不引入新的未知量，也不引入新的传感。有三处不对称值得追踪。复合质量是控制器\emph{直接}
+收到的唯一被估量，而一阶矩只能经由 $\cvec$ 与 $\dJ$ 抵达——这正是载荷离机时不会有任何量变为
+未定义的原因。但质量同时也会经 $\cvec$ 与 $B_{x,y}$ 抵达 $\dot{\bm\omega}$；被
+式~\eqref{eq:Afrozen} 冻结的只是其中被放大的那条通路 $A$。此外，非对角惯量式~\eqref{eq:Jxz}
+只进估计器的模型，不进控制器的模型——后者的 $\Jt$ 是对角的。回路是经由实测转速闭合的，绝不
+经由求解器意图中的那个力矩。}
+\label{fig:paramflow}
+\end{figure}
+
+图~\ref{fig:paramflow} 把同一份清点画成了流动：什么被测量、什么被估计、什么由代数生成，以及
+每个量最终在哪里被消费。
+
+
+\begin{table}[ht]
+\caption{按身份分类的模型参数。只有复合质量与水平一阶质量矩的两个分量是估计器的决策变量；惯量
+增量与质心偏移都由它们生成。}
+\label{tab:params}
+\centering
+\footnotesize
+\begin{tabular}{@{}l p{0.20\textwidth} c p{0.26\textwidth} p{0.16\textwidth}@{}}
+\toprule
+符号 & 含义 & 维数 & 身份 & 入口 \\
+\midrule
+$\mT$ & 复合质量 & 1 & \textbf{MHE 决策变量} & \eqref{eq:trans}, \eqref{eq:hover} \\
+$\svec$ & 水平一阶质量矩 & 2 & \textbf{MHE 决策变量} & \eqref{eq:tcom_s}, \eqref{eq:Jxz} \\
+\midrule
+$\cvec$ & 质心水平偏移 & 2 & 导出量 $\svec/\mT$ & \eqref{eq:tcom}, \eqref{eq:hover} \\
+$\dJ$ & 滚转/俯仰惯量增量 & 1 & 导出量，式~\eqref{eq:Jdeployed} 的 $A$ & \eqref{eq:rot}, \eqref{eq:gain} \\
+$\mP$ & 载荷质量 & 1 & 导出量，$(\mT-\mB)^{+}$ & \eqref{eq:Jdeployed} \\
+\midrule
+$r_z$ & 载荷竖直力臂 & 1 & 弱先验，\SI{-0.47}{\meter} & \eqref{eq:Jdeployed}, \eqref{eq:Jxz} \\
+$\rxy$ & 载荷水平力臂 & 2 & \textbf{不使用} & --- \\
+\midrule
+$\mB$ & 空机质量 & 1 & 标定值 & \SI{2.0643}{\kg} \\
+$\Jb$ & 空机惯量 & 3 & 标定值 & $\mathrm{diag}(0.0142,$ $0.0142, 0.0210)$ \\
+$k_f, k_m$ & 推力系数与偏航反扭系数 & 2 & 标定值 & \SI{8.55e-6}{}, $0.016$ \\
+$k_d$, $g$ & 阻力系数、重力加速度 & 2 & 常数 & $0.05$, $9.81$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+表中有三项设计选择容易引来质疑，而每一项都可以用上文已经给出的论证来回答。
+
+\paragraph{为什么不把惯量增量也一并增广？}因为在所关心的飞行工况下它几乎不可观。该增量只通过
+式~\eqref{eq:rot} 中的 $\dot{\bm{\omega}}$ 起作用，而投递任务——大部分时间处于近悬停、低角速率
+飞行——对该通道的激励很弱。把 $\dJ$ 放开为自由变量，会让优化器用一个数据几乎无法约束的量去解释
+测量噪声。还有第二个、更尖锐的理由：$\Jt$ 在式~\eqref{eq:rot} 中是以\emph{求逆}的形式出现的，
+并被向前传播 $N$ 步，因此其误差是被放大而不是被衰减的；相比之下，基于扰动的方法所采用的替代
+方案——在 $\dot{\bm\omega}$ 上加一个可加扰动项~\cite{hanover2021}——则总是安全的。此外，估计六个惯量元素还会
+把量级天然为 $10^{-2}$、比质量低两个数量级的决策变量，加进一个本就对尺度敏感的 Hessian 中。
+
+\paragraph{为什么不把水平力臂也增广？}因为没有任何东西观测它。$\rxy$ 在运动方程中的每一次出现
+都在乘积 $\mP\rxy$ 内部，而这正是我们确实增广了的状态 $\svec$。分别估计两个因子会添加一个不可
+辨识的方向，并会重新引入第~\ref{sec:model:whyS}~节的释放奇异性。
+
+\paragraph{为什么对 $r_z$ 用先验可以接受，对 $\rxy$ 用先验却不可以？}因为二者的误差敏感性相差
+数个数量级。$\rxy$ 的误差会通过角速率残差所辨识的那个乘积直接传播进质量估计；而 $r_z$ 的误差
+只进入 $A$ 与非对角项，在 $\dot{\bm{\omega}}\approx\bm 0$ 的近悬停飞行中二者都是二阶效应。对
+$r_z$ 施加 \SI{\pm33}{\percent} 的扰动，质量估计的变化小于报告精度。
+
+\paragraph{信息边界。}闭环中确实还留有一个具有质量量纲的常数，而它是被公开声明、而非被暗中吸收
+的：平台的 \SI{0.30}{\kg} 载荷\emph{包络}。它用于第~\ref{sec:frame:bootstrap}~节挂载时刻的惯量
+引导，用于第~\ref{sec:frame:momentref}~节中 $\svec$ 的物理可容许界，以及用于表~\ref{tab:amode}
+的包络处理方式。它是机体的一项规格，与 $\Jb$ 或执行机构包络式~\eqref{eq:envelope} 属于同一范畴，
+它并不是任何一次具体飞行中所携带包裹的质量。因此本论文的准确论断是：\emph{没有任何与任务相关的
+载荷质量、也没有任何挂载或释放的通知，进入估计器或控制器的模型更新}；而不是更强的那个论断——
+飞控软件栈中不含任何具有载荷量级的常数。
+
+\section{明示的建模近似}\label{sec:model:approx}
+
+以下四项近似在此明确声明，而不是留给读者去发现。
+
+\paragraph{二阶水平惯量项被丢弃。}式~\eqref{eq:ABC} 中的 $C_{ij}$ 组被置零，推导见
+第~\ref{sec:model:Jofs}~节。其误差为式~\eqref{eq:Cerror}，在本平台几何下为滚转/俯仰增量的
+\SI{2.6}{\percent}，理由是式~\eqref{eq:Cdegenerate} 的退化性。这是一次有意为之的交换：以一个
+小偏差换取一个适定的释放极限。
+
+\paragraph{惯量增量的各向异性未被表示。}部署的模型式~\eqref{eq:Jdeployed} 在滚转与俯仰上携带
+同一个 $\dJ$，而式~\eqref{eq:djaxes} 表明只要 $r_x\ne r_y$ 就有 $\dJ_{xx}\ne\dJ_{yy}$。在丢弃
+$C_{ij}$ 项之后二者变得相同，$\dJ_{xx}=\dJ_{yy}=A$，因此这项近似被上一项所涵盖，而不是额外的
+一项。
+
+\paragraph{偏航增量被忽略。}式~\eqref{eq:djaxes} 中的第三个表达式 $\dJ_{zz} = \mu(r_x^2 + r_y^2)$
+未被加到 $J_{zz}$ 上。在 \SI{0.3}{\kg} 且 $r_{xy} = \SI{0.109}{\meter}$ 时，它等于
+\SI{0.0031}{\kg\meter\squared}，即 $J_{zz}$ 的 \SI{14.8}{\percent}。这是一项已知且不可忽略的
+近似。之所以保留它，是因为在部署所用的坐标下 $\dJ_{zz}$ 属于 $C_{ij}$ 组，会重新引入
+式~\eqref{eq:Cdegenerate}；也因为偏航通道既不承担载荷补偿，也不参与任何释放判决。
+
+\paragraph{竖直质心偏移按构造即不存在。}如第~\ref{sec:model:tcom}~节所示，$c_z$ 之所以从
+式~\eqref{eq:tcom} 中消失，是共线性带来的精确代数结果，而不是一次截断。把它列在近似之中，只是
+为了杜绝相反的解读。
+
+\paragraph{惯量被视作在机体系中恒定。}式~\eqref{eq:rot} 略去了时变惯量本应贡献的
+$\dot{\Jt}\bm{\omega}$ 项。这一略去在抓取或释放的任一侧都是精确的，只在跨越该时刻、即转移过程
+本身持续的那段时间内不成立。在估计器内部，受影响的样本落在单个时间窗内，并被作为过程噪声吸收；
+本文不试图对转移过程做动力学建模。
+
+还有两项简化继承自旋翼模型而非刚体模型。其一，推力系数 $k_f$ 是静态常数，已知在快速平飞时的
+大诱导入流下会失效~\cite{bangura2012}；其二，式~\eqref{eq:phys} 中的偏航反扭只取稳态项，略去了
+旋翼角加速度的贡献 $\sum_i J_r \dot\omega_i$，后者在悬停与温和机动中可忽略，但在快速偏航时不可
+忽略。两者都将在第~\ref{ch:evaluation}~章中被重新检视，那里直接测量了整套接口对 $k_f$ 标定
+失准的敏感性。
+
+\end{spacing}
+\newpage
