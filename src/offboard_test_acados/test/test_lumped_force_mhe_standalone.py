@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""mhe 档平动扰动估计(lumped_force_enable)回归测试(不起 ROS)。"""
+"""平动残差补偿(L1 增广,标称质量取 m_est)回归测试(不起 ROS)。"""
 
 import numpy as np
 
@@ -26,9 +26,7 @@ class _Stub:
     _l1_update = nn.AcadosNMPCNode._l1_update
     _accept_empty = nn.AcadosNMPCNode._accept_empty
 
-    def __init__(self, m_est, control_mode='mhe'):
-        self.control_mode = control_mode
-        self.lumped_force_enable = control_mode != 'l1'
+    def __init__(self, m_est):
         self.l1 = L1Augmentation(a_gain=10.0, omega_c=0.5)
         self.d_lumped = np.zeros(3)
         self._l1_last_stamp = None
@@ -36,9 +34,12 @@ class _Stub:
         self.m_est = m_est
         self._l1_T_phys = None
         self.payload_unresolved = False
-        self.gripper_mode = True
         self.grip_drop_pending = False
-        self.drop_pending_confirmation = False
+        self.grip_drop_done = False
+        self.grip_dropped = False
+        self._acc_loss_watchdog_armed = False
+        self.attach_time = None
+        self.accept_confidence = 1.0
         self.no_payload_confidence = 1.0
         self.no_payload_conf_hold_frames = 20
 
@@ -74,22 +75,15 @@ def test_dhat_zero_when_mest_is_right():
     assert np.linalg.norm(st.d_lumped) < 1e-3
 
 
-def test_l1_mode_still_uses_nominal_mass():
-    st = _Stub(m_est=p.m + 0.30, control_mode='l1')
-    _hover(st, p.m + 0.30)
-    # l1 档标称质量是空机:d̂ 要补满整个载荷,与 m_est 无关
-    T_model = p.m * (p.g - st.d_lumped[2])
-    assert abs(T_model - (p.m + 0.30) * p.g) < 0.05
-
 
 def test_uncommanded_accept_keeps_dhat_commanded_accept_resets():
     st = _Stub(p.m + 0.05)
     _hover(st, p.m + 0.30)
     d_before = st.d_lumped.copy()
-    st._accept_empty('confidence')            # 无投放指令:质量偏差还在,不清
+    st._accept_empty()                        # 无投放指令(看门狗未武装):质量偏差还在,不清
     assert np.array_equal(st.d_lumped, d_before)
 
     st._no_payload_latched = False
     st.grip_drop_pending = True
-    st._accept_empty('confidence')            # 真投放确认:清零重估
+    st._accept_empty()                        # 真投放确认:清零重估
     assert np.linalg.norm(st.d_lumped) == 0.0

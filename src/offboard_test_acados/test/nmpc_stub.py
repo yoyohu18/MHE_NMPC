@@ -30,6 +30,14 @@ class _Logger:
     warn = error = info
 
 
+class _L1:
+    def __init__(self):
+        self.resets = 0
+
+    def reset(self):
+        self.resets += 1
+
+
 class _NMPCStub:
     _confirm_no_payload_if_persistent = (
         mn_nmpc.AcadosNMPCNode._confirm_no_payload_if_persistent)
@@ -40,11 +48,8 @@ class _NMPCStub:
         mn_nmpc.AcadosNMPCNode._grip_unresolved_ref_window)
     _payload_estimate_is_fresh = (
         mn_nmpc.AcadosNMPCNode._payload_estimate_is_fresh)
-    _confidence_accept_allowed = (
-        mn_nmpc.AcadosNMPCNode._confidence_accept_allowed)
     _accept_empty = mn_nmpc.AcadosNMPCNode._accept_empty
     _update_acc_confirm = mn_nmpc.AcadosNMPCNode._update_acc_confirm
-    _release_evidence_fresh = mn_nmpc.AcadosNMPCNode._release_evidence_fresh
     _update_acc_loss_watchdog = (
         mn_nmpc.AcadosNMPCNode._update_acc_loss_watchdog)
     _reset_acc_loss_watchdog = (
@@ -66,8 +71,6 @@ class _NMPCStub:
         self.no_payload_conf_hold_frames = 20
         self._no_payload_conf_frames = 0
         self._no_payload_latched = False
-        self.control_mode = 'mhe'
-        self.gripper_mode = True
         self.grip_drop_pending = False
         self.grip_drop_done = False
         # 2026-09-15:acados_nmpc_node 新增故障注入开关(默认关),_grip_drop_phase 会读它
@@ -95,6 +98,10 @@ class _NMPCStub:
         self.ref_fn = lambda t: np.full(13, 99.0)
         self.ref_window_fn = lambda t, N, dt, z_hover=None: np.full((13, N+1), 99.0)
         self._log = _Logger()
+        # 主线 L1 平动残差补偿恒开:真投放确认与意外脱落都会复位它
+        self.l1 = _L1()
+        self.d_lumped = np.zeros(3)
+        self._l1_last_stamp = None
 
     def get_clock(self):
         return _Clock(self)

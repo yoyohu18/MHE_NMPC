@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""吸附前最后对准(grip_align_rel)回归测试(不起 ROS)。"""
+"""吸附前最后对准回归测试(不起 ROS)。"""
 
 import time
 
@@ -27,9 +27,7 @@ class _Stub:
     _target_rel_fresh = nn.AcadosNMPCNode._target_rel_fresh
     target_rel_cb = nn.AcadosNMPCNode.target_rel_cb
 
-    def __init__(self, enabled=True, offset=(0.0, 0.0)):
-        self.gripper_mode = True
-        self.grip_align_rel = enabled
+    def __init__(self, offset=(0.0, 0.0)):
         self.grip_align_offset = np.asarray(offset, dtype=float)
         self.grip_align_tau = 0.5
         self.grip_align_xy_tol = 0.012
@@ -97,13 +95,6 @@ def test_ready_gate_tolerance_and_timeout():
     st2.feed([0.0, -0.045])               # 机体 - box = (0, 0.045),误差 5mm
     assert st2._align_ready(0.0)
 
-
-def test_disabled_is_noop():
-    st = _Stub(enabled=False)
-    st.feed([0.04, 0.0])
-    st._update_grip_align(0.0)
-    assert (st.grip_x, st.grip_y) == (1.0, 0.0)
-    assert st._align_ready(0.0)
 
 
 def test_stale_rel_does_not_count_as_aligned():
