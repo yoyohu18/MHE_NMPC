@@ -25,6 +25,7 @@ src/offboard_test_acados/            ROS2 包（包名沿用旧名，节点名�
   config/ worlds/ gz_plugins/        夹爪参数、Gazebo 世界、磁吸夹爪插件源码
 scripts/
   run_sitl.sh                        一键启动主线 SITL（headless）
+  run_batch.sh                       主线批次驱动（排程、代码指纹、逐架判定、补跑、汇总）
   stop_sitl.sh                       停止仿真
   tools/                             心跳、溯源记录、多箱世界生成、MHE/NMPC 新旧等价对拍工具
 docs/reference_params_20261105/      录自旧空间运行中批次的节点实际参数（基准）
@@ -47,6 +48,11 @@ ACADOS_SOURCE_DIR=/home/clear/acados LD_LIBRARY_PATH=/home/clear/acados/lib pyth
 bash scripts/run_sitl.sh
 PAYLOAD_KG=0.15 SPEED=4 DETACH_DELAY_SEC=4 bash scripts/run_sitl.sh   # 其他工况
 bash scripts/stop_sitl.sh
+
+# 批次(随机化排程 + 逐架判定 + 汇总,结果在 results/batch_<EXP>_<时间>/summary.md)
+DRY_RUN=1 EXP=faults bash scripts/run_batch.sh       # 只看排程
+EXP=faults bash scripts/run_batch.sh                 # smoke|release|faults|thrust|thrust_small|thrust_delay
+BATCH_DIR=results/batch_faults_<时间> bash scripts/run_batch.sh   # 续跑
 ```
 
 日志写到 `results/`。`run_sitl.sh` 的实验开关只有：`PAYLOAD_KG`、`SPEED`（2/4）、
