@@ -5,15 +5,21 @@
 # run_sitl.sh 的实验开关。所有日志写进该架自己的目录(RUN_DIR=flights/<idx>_<cell>)。
 #
 # 实验(EXP),工况 c1 0.15kg@2m/s  c2 0.15@4  c3 0.30@4  c4 0.30@2:
-#   smoke         2 架:c4 正常投放 + c1 意外脱落(检验驱动本身)
+#   smoke         6 架,覆盖六类路径(检验驱动、配置与日志,不看性能):
+#                 c4 d0 nominal / c4 d4 nominal / c1 d0 k0.90 / c1 d0 k1.10 /
+#                 c1 意外脱落 loss / c4 夹爪卡死 jam
 #   release       脱离 {立即 d0, 延迟 4 s d4} × c1–c4 × 9 轮                  = 72
 #   faults        {意外脱落 loss, 夹爪卡死 jam} × c1–c4 × 6 轮                 = 48
 #   thrust        推力增益 {0.90, 1.10} × c1–c4 × 6 轮,立即脱离               = 48
+#   thrust_low_d4 推力增益 0.90 × {c1, c2}(0.15 kg)× 6 轮,脱离延迟 4 s      = 12
+#                 (低估 k_f + 轻载 + 延迟脱离:检验带载时提前确认的风险)
 #   thrust_small  推力增益 {0.95, 1.05} × c1–c4 × 3 轮,立即脱离               = 24
 #   thrust_delay  推力增益 {0.90, 1.10} × c1–c4 × 3 轮,脱离延迟 4 s            = 24
 # 每轮(block)内全部格子随机排序,排程与种子开跑前一次写死在 schedule.csv。
-# 推力增益 = run_sitl.sh 的 THRUST_FAULT_GAIN:**同时**作用在 MHE 与加速度计检测器
-# 的推力映射上(一个标错的 k_f 会同时影响两者);被控对象与执行器油门映射不变。
+# 推力增益 = run_sitl.sh 的 THRUST_FAULT_GAIN = 估计/检测侧 k_f 标错:作用在 MHE 的
+# 转速→推力重构(含 resid 日志的比力)与 arm D 加速度计力平衡检测器上。以下保持标称 k_f:
+# NMPC 的 L1 集总残差 T_phys、推力→油门逆映射、actuator envelope、Gazebo 被控对象电机系数。
+# (MHE 质量估计进入 NMPC 模型,所以 k_f 误差仍会经质量估计间接影响控制。)
 #
 # 补跑规则(跑前冻结):不按结果补跑。只有基础设施失败(栈未起/无 NMPC 日志、日志缺失、
 # 配置与排程不符、物理吸附失败)在主排程结束后补跑**一次**,补跑行 kind=rerun、
@@ -42,7 +48,7 @@ if [ -n "${BATCH_DIR:-}" ]; then
   EXP=$(sed -n 's/^experiment=//p' "$BDIR/batch_info.txt" 2>/dev/null)
   [ -n "$EXP" ] || { echo "[batch] $BDIR has no batch_info.txt"; exit 2; }
 else
-  EXP=${EXP:?EXP=smoke|release|faults|thrust|thrust_small|thrust_delay}
+  EXP=${EXP:?EXP=smoke|release|faults|thrust|thrust_low_d4|thrust_small|thrust_delay}
   BDIR=$WS/results/batch_${EXP}_$(date +%Y%m%d_%H%M%S)
 fi
 MAN=$BDIR/manifest.csv
@@ -91,20 +97,23 @@ out, seed = sys.argv[1], int(sys.argv[2])
 exp = os.environ['EXP']
 rng = random.Random(seed)
 W = ('c1', 'c2', 'c3', 'c4')
-DESIGN = {   # exp -> (rounds, [(scen, fault, tgain), ...])
-    'release':      (9, [('d0', 'none', '1.0'), ('d4', 'none', '1.0')]),
-    'faults':       (6, [('d0', 'loss', '1.0'), ('d0', 'jam', '1.0')]),
-    'thrust':       (6, [('d0', 'none', '0.90'), ('d0', 'none', '1.10')]),
-    'thrust_small': (3, [('d0', 'none', '0.95'), ('d0', 'none', '1.05')]),
-    'thrust_delay': (3, [('d4', 'none', '0.90'), ('d4', 'none', '1.10')]),
+DESIGN = {   # exp -> (rounds, [(scen, fault, tgain), ...], works)
+    'release':       (9, [('d0', 'none', '1.0'), ('d4', 'none', '1.0')], W),
+    'faults':        (6, [('d0', 'loss', '1.0'), ('d0', 'jam', '1.0')], W),
+    'thrust':        (6, [('d0', 'none', '0.90'), ('d0', 'none', '1.10')], W),
+    'thrust_low_d4': (6, [('d4', 'none', '0.90')], ('c1', 'c2')),
+    'thrust_small':  (3, [('d0', 'none', '0.95'), ('d0', 'none', '1.05')], W),
+    'thrust_delay':  (3, [('d4', 'none', '0.90'), ('d4', 'none', '1.10')], W),
 }
 rows = []    # (block, cell_id, work, scen, fault, tgain, kind)
 if exp == 'smoke':
-    rows = [(0, 'c4_d0_none_k1.0', 'c4', 'd0', 'none', '1.0', 'smoke'),
-            (0, 'c1_d0_loss_k1.0', 'c1', 'd0', 'loss', '1.0', 'smoke')]
+    SM = [('c4', 'd0', 'none', '1.0'), ('c4', 'd4', 'none', '1.0'),
+          ('c1', 'd0', 'none', '0.90'), ('c1', 'd0', 'none', '1.10'),
+          ('c1', 'd0', 'loss', '1.0'), ('c4', 'd0', 'jam', '1.0')]
+    rows = [(0, f'{w}_{sc}_{fa}_k{tg}', w, sc, fa, tg, 'smoke') for w, sc, fa, tg in SM]
 elif exp in DESIGN:
-    rounds, levels = DESIGN[exp]
-    cells = [(w, *lv) for w in W for lv in levels]
+    rounds, levels, works = DESIGN[exp]
+    cells = [(w, *lv) for w in works for lv in levels]
     for b in range(1, rounds + 1):
         cc = cells[:]
         rng.shuffle(cc)
@@ -148,6 +157,7 @@ if [ ! -f "$SCHED" ]; then
     echo "seed=$(cat "$BDIR/seed.txt")"
     echo "fingerprint=$FP_NOW"
     echo "git_head=$(git -C "$WS" rev-parse HEAD 2>/dev/null)"
+    echo "git_tag=$(git -C "$WS" describe --tags --exact-match HEAD 2>/dev/null)"
     echo "git_dirty_runtime=$(git -C "$WS" status --porcelain -- src scripts | wc -l)"
     echo "post_sec=$POST_SEC trig_timeout=$TRIG_TIMEOUT rerun_infra=$RERUN_INFRA"
     echo "system=deployed (reduced MHE R + force-balance release, arm D); run_sitl.sh defaults"
