@@ -6,6 +6,13 @@
 %% (formerly split between Chapter 3 and this chapter) are collected in
 %% Section 4.2, the reduced velocity--mass estimator is the deployed default, and
 %% the two optimal control problems are adjacent.  Labels are unchanged.
+%% 2026-11-06: aligned with the mainline code base (MHE_NMPC, commit 5b7881e).
+%% The deployed release rule is the dual-enabled force-balance rule (arm D); the
+%% mass-evidence rule and its two arming policies are described as the rule of
+%% the cohort.  The attach-time floor has one hand-over rule (hold until the
+%% release command or a detected uncommanded loss); the evidence hand-over, the
+%% lift-off-armed variant and trajectory-scaled weights are no longer in the
+%% controller.  No experimental number changed.
 
 \chapter{The MHE--NMPC Framework}
 \label{ch:framework}
@@ -26,10 +33,13 @@ believe that its payload has gone.
 The estimator receives no attach or release notification. The controller's
 model parameters follow the estimate continuously, and a release is
 \emph{accepted} --- declared complete, with auxiliary states reset --- only on
-persistent estimator evidence. Section~\ref{sec:frame:why-eventless} separates
-what that acceptance does from what the continuous adaptation does, and
-Section~\ref{sec:frame:limits-lifecycle} states what a mass-only lifecycle cannot
-do.
+persistent evidence that the payload has left. In the deployed system that
+evidence is a force balance formed from rotor speeds and the inertial unit,
+independent of the mass estimate (Section~\ref{sec:frame:accdet}); the cohort of
+Chapter~\ref{ch:evaluation} used the estimator's own mass evidence.
+Section~\ref{sec:frame:why-eventless} separates what acceptance does from what
+the continuous adaptation does, and Section~\ref{sec:frame:limits-lifecycle}
+states why a lifecycle on the mass estimate alone was replaced.
 
 \section{Closed-Loop Architecture}\label{sec:frame:arch}
 
@@ -41,22 +51,28 @@ containing the estimator and the predictive controller.
 
 \begin{figure}[ht]
 \centering
-\includegraphics[width=0.98\textwidth]{Figures/fig1_architecture_massonly.pdf}
-\caption{System architecture and information flow. The complete pipeline consumes
-only rotor speeds and odometry. One atomic, health-gated frame carrying the
-composite mass and the inertia increment derived from it drives both the NMPC
-model and the continuous body-rate command scheduling. No attach or release
-notification enters this path.}
+\includegraphics[width=0.98\textwidth]{Figures/fig1_architecture_deployed.pdf}
+\caption{System architecture and information flow of the deployed system. The
+adaptive path consumes only rotor speeds and odometry: one atomic, health-gated
+frame carrying the composite mass and the inertia increment derived from it
+drives both the NMPC model and the continuous body-rate command scheduling. The
+release path is separate: a force balance of the reconstructed thrust against
+the inertial unit's specific force feeds the release lifecycle
+(Section~\ref{sec:frame:accdet}), which does not read the frame. No attach or
+release notification enters either path.}
 \label{fig:architecture}
 \end{figure}
 
 Two properties of this diagram carry the argument of the dissertation.
 
-First, \textbf{the only inputs are odometry and rotor speeds.} The estimator does
-not read the controller's intended thrust or torque
+First, \textbf{the only inputs of the adaptive path are odometry and rotor
+speeds.} The estimator does not read the controller's intended thrust or torque
 (Section~\ref{sec:model:phys}), does not read the gripper's attach or release
 record, and does not read the simulator's joint state. The payload truth
-available in simulation is used exclusively for offline scoring.
+available in simulation is used exclusively for offline scoring. The release
+lifecycle additionally reads the specific force measured by the inertial unit
+(Section~\ref{sec:frame:accdet}); like the rotor speeds it is a measurement, and
+it does not reach the estimator or the controller's model.
 
 Second, \textbf{there is exactly one interface.} The estimator publishes a single
 atomic frame (Section~\ref{sec:frame:interface}) containing the mass, the derived
@@ -109,9 +125,9 @@ Rate, horizon & \SI{10}{\hertz}, $N=20$, $\Delta t=\SI{0.1}{\second}$ & same & \
 \bottomrule
 \end{tabularx}
 \\[4pt]
-\footnotesize Implementation switch: \texttt{MHE\_MODEL\_VARIANT=reduced} or
-\texttt{full}. Since 5 November 2026 the experiment entry points default to
-\texttt{reduced}; the library default of the estimator node remains \texttt{full}.
+\footnotesize The campaigns selected F with the switch
+\texttt{MHE\_MODEL\_VARIANT=full} of the campaign code base. The mainline code
+base contains R only; F, and the switch, remain in the campaign code base.
 \end{table}
 
 \subsection{The deployed estimator: velocity and mass}\label{sec:frame:redmodel}
@@ -246,7 +262,8 @@ at it, the two horizontal-offset entries $\cvec$ are held at zero (assumption~2)
 and $\hat{\bm d}$ is the residual specific force of
 Section~\ref{sec:model:residual}. The offset entries remain because the same
 generated solver also served the eccentric-grasp configuration of
-Section~\ref{sec:eval:eccablation}. The prediction model is the plant model of
+Section~\ref{sec:eval:eccablation}; the deployed controller has no setting that
+fills them. The prediction model is the plant model of
 Section~\ref{sec:model:dyn} with these parameters substituted,
 \begin{align}
 \dot{\bm p} &= \bm v, \qquad
@@ -676,8 +693,9 @@ reproduces $L_v$ exactly but relaxes $L_\omega$ by a factor of $3.2$, which
 exposes a pre-existing mismatch rather than introducing one: the original value
 was documented as matching a \emph{circular} trajectory, whose yaw rate is
 constant at $w$, while the vehicle actually flies a figure-eight whose peak is
-$3.17w$. The rescaling is off by default so that historical batches remain
-reproducible.
+$3.17w$. The rescaling was off in every flight reported in this dissertation
+and is not part of the deployed controller; the constant tolerances of
+\eqref{eq:Lstate} are the ones in effect.
 
 \subsection{Residual specific force}\label{sec:model:residual}
 
@@ -708,14 +726,16 @@ vertical component.
 
 Four properties keep it out of the payload accounting. It is a specific force,
 not a mass, so it needs no assumption about what the mass is. It is used by the
-controller only: it does not reach the estimator, the evidence score
-\eqref{eq:gamma} or any lifecycle decision. It is reset to zero when the
-controller accepts a release with a release command outstanding
-(Section~\ref{sec:frame:unresolved}), since a residual learned against the loaded
-vehicle becomes a phantom force once the payload has gone; an acceptance with
-\emph{no} command outstanding does not reset it, and the residual is then
+controller only: it does not reach the estimator, the evidence scores
+\eqref{eq:gamma} and \eqref{eq:gammaacc} or any lifecycle decision. It is reset
+to zero whenever the controller accepts a release --- a commanded release, or a
+load lost without a command and detected by the watchdog of
+Section~\ref{sec:frame:accdet} --- since a residual learned against the loaded
+vehicle becomes a phantom force once the payload has gone. (Under the always-on
+mass-evidence arm of the cohort, an acceptance could also occur with no command
+outstanding and no loss detected; it did not reset the residual, which was then
 unlearned by \eqref{eq:l1resid} itself, at the \SI{2}{\second} time constant of
-the low-pass filter. And it is held at zero while the measured thrust is below
+the low-pass filter.) And it is held at zero while the measured thrust is below
 $0.4\,\mB g$, because on the ground the support force would otherwise be learned
 as an upward disturbance. Its cost is equally plain: because it compensates the
 translational consequence of a mass bias, tracking results obtained with it do
@@ -724,7 +744,9 @@ wherever it matters (Chapter~\ref{ch:evaluation}). For the same reason the
 $\mathcal{L}_1$ baseline, which uses the same law with a fixed nominal mass and
 no payload model, differs from the deployed controller in the payload model, not
 in the presence of disturbance estimation. Section~\ref{sec:eval:l1ablation}
-isolates its contribution.
+isolates its contribution. The $\mathcal{L}_1$ and fixed-parameter comparison
+controllers of Section~\ref{sec:eval:camp:ctrl} were flown from the campaign
+code base; the deployed controller contains neither.
 
 \subsection{Input constraints and the actuator envelope}\label{sec:frame:inputs}
 
@@ -950,16 +972,18 @@ implied by the platform's \SI{0.30}{\kg} payload envelope; the mass is untouched
 and no payload is fabricated in it. At the nominal arm the floor is
 $\dJ=\SI{0.0191}{\kg\meter\squared}$, an inner-loop ratio of $2.34$; the
 controller uses the larger of the floor and the estimate-derived increment, so a
-heavier estimate still raises the inertia. Two hand-over rules are implemented.
-In the original rule the overlay is faded out over \SI{0.5}{\second} once the
-estimator independently reports persistent loaded evidence, namely
-$\dJ\ge\SI{0.010}{\kg\meter\squared}$ together with an evidence score well below
-the confirmation threshold, sustained for \SI{0.5}{\second}. In the rule used for
-evaluation (\emph{hold until command}), loaded evidence does not end the floor;
-it is held until the controller issues the release command and is then faded over
-the same \SI{0.5}{\second} to the estimate-derived increment. If the estimate
-becomes stale or unhealthy while the handover is in progress, the fade freezes at
-the last safe inertia rather than continuing toward zero.
+heavier estimate still raises the inertia. The floor is \emph{held until
+command}: loaded evidence does not end it. It is ended by the controller's
+release command, or by the acceptance of an uncommanded loss
+(Section~\ref{sec:frame:accdet}), and is then faded over \SI{0.5}{\second} to the
+estimate-derived increment. If the estimate becomes stale or unhealthy while the
+handover is in progress, the fade freezes at the last safe inertia rather than
+continuing toward zero. An earlier rule, which faded the floor out once the
+estimator reported persistent loaded evidence ($\dJ\ge\SI{0.010}{\kg\meter\squared}$
+with an evidence score well below the confirmation threshold, sustained for
+\SI{0.5}{\second}), was used in development and is not part of the deployed
+controller: after its handover the inertia follows the loaded estimate, which
+collapses in sustained manoeuvre (Section~\ref{sec:eval:collapse}).
 
 The hold rule is the one place where the release command touches the
 controller's payload model, and it should be stated exactly. The command ends an
@@ -968,9 +992,12 @@ inertia is whatever the estimate implies, which for a payload still attached is
 the loaded value, and the release is still accepted only by
 \eqref{eq:confirm}. The command is waited for because, after a real release, the
 estimator can no longer produce the loaded evidence that would end the floor, and
-the floor would otherwise remain on an empty airframe indefinitely. By the same
-token, a load lost without any command leaves the floor on the empty airframe;
-that case is outside the evaluation (Section~\ref{sec:eval:conditions}).
+the floor would otherwise remain on an empty airframe indefinitely. A load lost
+without any command issues no command. In the cohort's configuration the floor
+therefore stayed on the empty airframe, which is why that scenario was not run
+there (Section~\ref{sec:eval:conditions}); in the deployed configuration the
+loss watchdog ends it, and the campaign measured that path
+(Section~\ref{sec:eval:camp:loss}).
 
 Three properties keep this consistent with the rest of the design. It is
 \emph{inertia-only}, so it cannot influence the mass channel on which every
@@ -980,13 +1007,13 @@ payload envelope, which Section~\ref{sec:model:whynot} has already disclosed as 
 platform specification rather than task information.
 
 The bootstrap also has a known failure of its own. It is armed when the grasp is
-enabled, whether or not the gripper actually catches the parcel, and it is handed
-over only on loaded evidence. A missed grasp therefore leaves an empty airframe
-flying with the envelope inertia floor --- a $2.34$-fold inner-loop scale at the
-nominal arm --- because the evidence that would release the floor never arrives;
-under the hold rule it is in any case kept until the release command. A variant
-that arms the floor only once the vehicle has detectably lifted the load is
-implemented and off by default.
+enabled, whether or not the gripper actually catches the parcel. A missed grasp
+therefore leaves an empty airframe flying with the envelope inertia floor --- a
+$2.34$-fold inner-loop scale at the nominal arm --- until the release command.
+The loss watchdog cannot end it earlier, because the watchdog arms only on
+airborne loaded evidence, which a missed grasp never produces. A variant that
+armed the floor only once the vehicle had detectably lifted the load was tried in
+development and is not part of the deployed controller.
 
 \section{The Grasp--Release Lifecycle}\label{sec:frame:lifecycle}
 
@@ -1002,7 +1029,7 @@ does, not because any decision switches them.
 \item \emph{The release lifecycle state} --- carry, release pending, release
 accepted, or \textsc{unresolved} --- is owned by the controller.
 \item \emph{The residual specific force} of Section~\ref{sec:model:residual} is
-reset when a release is accepted with a release command outstanding.
+reset when a release is accepted.
 \item \emph{Task completion} --- the delivery is declared done --- coincides with
 acceptance.
 \end{enumerate}
@@ -1015,62 +1042,77 @@ to accept the release at that instant. The command and the physical detachment
 can, however, differ: a gripper can be slow to open, can jam, or can release only
 part of a load. A controller that accepts at the command declares the delivery
 complete and discards the residual it learned against the loaded vehicle while
-the load may still be on the hook. Gating acceptance on estimator evidence ---
-\emph{estimator-confirmed detachment} --- separates ``the command was issued''
+the load may still be on the hook. Gating acceptance on measured evidence ---
+\emph{evidence-confirmed detachment} --- separates ``the command was issued''
 from ``the payload has left'', at the cost of a confirmation delay while the
-estimator accumulates evidence.
+evidence accumulates.
 
-Two arming policies are implemented on the estimator's evidence. The
-\emph{always-on} policy evaluates the rule throughout carry; the
-\emph{command-armed} policy starts its persistence count only after the release
-command. Chapter~\ref{ch:evaluation} shows why, on the mass evidence, the latter
-is preferred, and that neither detects a load lost without a command. A third
-rule, described in Section~\ref{sec:frame:accdet}, replaces the mass evidence
-with an independent force-balance test and enables it either by the command or
-by a watchdog armed on airborne load; it is the only rule in this dissertation
-that addresses uncommanded loss.
+Two kinds of evidence were used in this work. The cohort of
+Chapter~\ref{ch:evaluation} gated acceptance on the estimator's mass evidence
+$\gamma$ (Section~\ref{sec:frame:gamma}), under two arming policies: the
+\emph{always-on} policy evaluated the rule throughout carry, the
+\emph{command-armed} policy started its persistence count only after the release
+command. The cohort showed that, on the mass evidence, only the latter is sound,
+and that neither detects a load lost without a command. The deployed rule,
+described in Section~\ref{sec:frame:accdet}, replaces the mass evidence with an
+independent force-balance test and enables it either by the command or by a
+watchdog armed on airborne load; it is the only rule in this dissertation that
+addresses uncommanded loss, and it is the only release rule in the deployed
+controller.
 
 \subsection{Two state machines}\label{sec:frame:fsm}
 
-The lifecycle is split between the two nodes, as shown in
-Figure~\ref{fig:fsm}. The estimator owns payload \emph{presence}. The controller
-owns the \emph{release lifecycle} and accepts a release only on
-\emph{confirmation}. The separation exists so that no single estimator-side
-transition can, by itself, declare a delivery complete.
+The lifecycle is split as shown in Figure~\ref{fig:fsm}. The estimator tracks
+payload \emph{presence}. The controller owns the \emph{release lifecycle} and
+accepts a release only on \emph{confirmation}. The separation exists so that no
+single estimator-side transition can, by itself, declare a delivery complete.
 
 \begin{figure}[ht]
 \centering
-\includegraphics[width=0.92\textwidth]{Figures/fig_lifecycle_fsm_massonly.pdf}
-\caption[The payload lifecycle as two state machines]{The payload lifecycle as two state machines. The estimator owns payload
-presence, driven by sustained payload-mass evidence with hysteresis. The
-controller owns the release lifecycle: the release command moves it from carry to
-release pending and starts the \SI{12}{\second} timeout, and a release is
-accepted on confirmation, $\gamma\ge0.90$ held for \SI{1.0}{\second}.
-\textsc{unresolved} is a hold, not an acceptance: the vehicle brakes to hover and
-keeps waiting for evidence. The dashed path exists only under the always-on
-policy. In every state the mass and inertia increment follow the estimate frame
-by frame; no transition sets them.}
+\includegraphics[width=0.98\textwidth]{Figures/fig_lifecycle_fsm_deployed.pdf}
+\caption[The deployed payload lifecycle]{The deployed payload lifecycle. The
+estimator tracks payload presence, driven by sustained payload-mass evidence with
+hysteresis, and publishes the evidence score $\gamma$; neither is used to accept
+a release. The controller owns the release lifecycle: the release command moves
+it from carry to release pending and starts the \SI{12}{\second} timeout, and a
+release is accepted on confirmation by the force-balance score,
+$\gamma_{\mathrm{acc}}\ge0.90$ held for \SI{1.0}{\second}
+(Section~\ref{sec:frame:accdet}). \textsc{unresolved} is a hold, not an
+acceptance: the vehicle brakes to hover and keeps waiting for evidence. The
+dashed path, acceptance without a command, is open only once the loss watchdog
+has armed on airborne load, and is classified as an uncommanded loss. In the
+cohort of Chapter~\ref{ch:evaluation} the same machine ran on the mass score
+$\gamma$, and the path without a command existed only under the always-on
+policy (arm~B), with no watchdog. In every state the mass and inertia increment
+follow the estimate frame by frame; no transition sets them, except that an
+uncommanded loss zeroes the inertia increment once.}
 \label{fig:fsm}
 \end{figure}
 
 Presence is a hysteretic \textsc{empty}$\leftrightarrow$\textsc{loaded} machine.
 It enters \textsc{loaded} when the estimated payload mass exceeds
-\SI{0.09}{\kg} for \SI{2}{\second}, with a directional thrust residual as a fast
-path; it returns to \textsc{empty} when the payload mass stays below
-\SI{0.02}{\kg} for \SI{5}{\second} \emph{while the vehicle is quiet}
-($\lVert\bm\omega\rVert\le\SI{0.15}{\radian\per\second}$,
+\SI{0.09}{\kg} for \SI{2}{\second}; it returns to \textsc{empty} when the payload
+mass stays below \SI{0.02}{\kg} for \SI{5}{\second} \emph{while the vehicle is
+quiet} ($\lVert\bm\omega\rVert\le\SI{0.15}{\radian\per\second}$,
 $\lVert\bm v_{xy}\rVert\le\SI{0.20}{\meter\per\second}$). The quiet-flight
 condition is there because the mass is least reliable in manoeuvre
 (Section~\ref{sec:frame:limits-lifecycle}). The thresholds differ by a factor of
 four-and-a-half on purpose: the estimate is naturally low while it converges
-after a grasp, and a single threshold would toggle at the start of every lift. A
-separate latch records that the present flight reliably entered \textsc{loaded}
-at some point.
+after a grasp, and a single threshold would toggle at the start of every lift. In
+the deployed estimator presence is a diagnostic: it is logged with every
+transition and affects no published field. The full-state estimator of the
+campaigns additionally had a directional thrust residual as a fast entry path and
+a latch recording that the flight had entered \textsc{loaded}.
 
 \subsection{No-payload evidence score}\label{sec:frame:gamma}
 
-Apart from whether a release command has been issued, every lifecycle decision
-of the controller is a function of the published frame \eqref{eq:frame} alone. Let $\sigma(v;a,b)$ be the smooth indicator that is $1$
+The estimator's evidence score is a function of the published mass alone. It was
+the release evidence of the cohort, in which every lifecycle decision of the
+controller, apart from whether a release command had been issued, was a function
+of the published frame \eqref{eq:frame}. In the deployed system the score is
+still published and logged but is not used to accept a release; its form is
+reused by the force-balance score of Section~\ref{sec:frame:accdet}. Let
+$\sigma(v;a,b)$ be the smooth indicator that is $1$
 for $|v|\le a$, $0$ for $|v|\ge b$, and in between
 \begin{equation}
 \sigma(v;a,b) = 1 - \bigl(3\chi^2 - 2\chi^3\bigr),
@@ -1102,17 +1144,21 @@ provide independent release evidence.
 
 \subsection{Confirmation, \textsc{unresolved}, and braking to hover}\label{sec:frame:unresolved}
 
-The controller accepts a release through exactly one route:
+The controller accepts a release through exactly one route, a persistence test
+on an evidence score $\gamma_{\mathrm e}$:
 \begin{equation}
-\gamma \ge 0.90 \quad\text{held for}\quad \SI{1.0}{\second}
-\quad\text{on healthy, fresh frames.}
+\gamma_{\mathrm e} \ge 0.90 \quad\text{held for}\quad \SI{1.0}{\second}
+\quad\text{on fresh evidence.}
 \label{eq:confirm}
 \end{equation}
-The persistence must be contiguous in valid estimator time: a stale or failed
-frame breaks the count rather than pausing it. There is no separate estimator
-declaration in the evaluated configuration, and the release command does not enter
-the evidence score \eqref{eq:gamma}; under the command-armed policy it only decides
-when the count of \eqref{eq:confirm} may start.
+In the deployed system $\gamma_{\mathrm e}$ is the force-balance score
+$\gamma_{\mathrm{acc}}$ of \eqref{eq:gammaacc}, and fresh means that the
+rotor-speed and inertial signals are younger than \SI{0.2}{\second}; in the
+cohort it was the mass score $\gamma$ of \eqref{eq:gamma}, on healthy, fresh
+frames. The persistence must be contiguous in valid evidence time: stale
+evidence breaks the count rather than pausing it. There is no separate estimator
+declaration, and the release command does not enter either score; it only
+decides when the count of \eqref{eq:confirm} may start.
 
 If no confirmation arrives within \SI{12}{\second} of the release command, the
 controller enters \textsc{unresolved}. This state is what makes confirmation on
@@ -1153,8 +1199,10 @@ awaited. Attitude is blended over the same interval by the smooth-step of
 
 \subsection{Force-balance release evidence and the uncommanded-loss watchdog}\label{sec:frame:accdet}
 
-The failure of the always-on rule (Section~\ref{sec:frame:limits-lifecycle})
-lies in its evidence, not its arming: the mass estimate of the full-state
+This is the release rule of the deployed controller, called arm~D in
+Section~\ref{sec:eval:campaign}. It was introduced because the failure of the
+always-on rule (Section~\ref{sec:frame:limits-lifecycle}) lies in its evidence,
+not its arming: the mass estimate of the full-state
 estimator, with which the rule was developed, is the one quantity that degrades in
 manoeuvre (Section~\ref{sec:eval:collapse}). The reduced estimator shrinks that
 bias (Section~\ref{sec:eval:reduced}) but does not turn the mass estimate into an
@@ -1192,8 +1240,10 @@ is held rather than advanced while either signal is stale (older than
 \eqref{eq:confirm}, which is otherwise applied to $\gamma_{\mathrm{acc}}$
 unchanged: $\gamma_{\mathrm{acc}}\ge0.90$ held for \SI{1.0}{\second}. Under this
 rule the controller's lifecycle reads the inertial unit and the rotor speeds
-directly; the statement of Section~\ref{sec:frame:gamma} that every lifecycle
-decision is a function of the published frame does not hold for it, by design.
+directly and does not depend on the published frame, by design. The inertial
+unit is the one sensor the deployed system uses beyond odometry and rotor
+speeds, and only the lifecycle reads it; the adaptive path of
+Figure~\ref{fig:architecture} does not.
 
 What may consume the score is decided by \emph{dual enabling}. The score is
 computed throughout the flight, but a confirmation counts only when one of two
@@ -1214,16 +1264,19 @@ reads an empty vehicle, cannot produce an acceptance.
 An acceptance with a command pending is a normal release, with the actions of
 Section~\ref{sec:frame:why-eventless}. An acceptance with no command pending and
 the watchdog armed is declared an \emph{uncommanded loss}. In addition to
-resetting the residual specific force, the controller then zeroes the payload
-geometry, ends the attach-time inertia floor and resets the inner-loop scale to
-the bare-airframe value, and suppresses any later planned release, since there is
-nothing left to release. It issues no gripper command, because the gripper's
+resetting the residual specific force, the controller then sets the model's
+inertia increment to zero, starts the \SI{0.5}{\second} fade of the attach-time
+inertia floor (Section~\ref{sec:frame:bootstrap}), and suppresses any later
+planned release, since there is nothing left to release. The inner-loop scale,
+which follows the inertia increment, returns to unity at its recovery rate limit;
+afterwards the increment again follows the estimate, which by then reads the
+empty airframe. The controller issues no gripper command, because the gripper's
 state is unknown and it may be the gripper that failed.
 
 \subsection{What a mass-only lifecycle cannot do}\label{sec:frame:limits-lifecycle}
 
-Because \eqref{eq:gamma} is a test on the mass alone, the lifecycle inherits
-every failure of that estimate. In sustained manoeuvre a low bias can carry
+A lifecycle that tests the mass score \eqref{eq:gamma}, as the cohort's did,
+inherits every failure of that estimate. In sustained manoeuvre a low bias can carry
 $\hat m_P$ below the \SI{0.024}{\kg} confirmation threshold while the payload
 is attached; no rule admitting only that estimate can distinguish the collapse
 from a real release. The collapse was observed with the full-state estimator; the
@@ -1231,14 +1284,14 @@ reduced estimator's loaded bias in manoeuvre is smaller
 (Section~\ref{sec:eval:reduced}), but the argument does not depend on its
 size.
 
-The evaluated configuration holds the inertia floor until the release command,
+The cohort's configuration held the inertia floor until the release command,
 protecting inner-loop authority but not the lifecycle. Command-arming separately
 prevents carry-phase acceptance by not evaluating the release rule before a
 command. The cohort supports that arming policy
 (Section~\ref{sec:eval:unsignaled}), but neither mitigation corrects the mass
-estimate itself. The force-balance rule of Section~\ref{sec:frame:accdet} leaves
-the estimate as it is and stops asking it the release question; its own
-limitation is calibration rather than manoeuvre
+estimate itself. The deployed force-balance rule of
+Section~\ref{sec:frame:accdet} leaves the estimate as it is and stops asking it
+the release question; its own limitation is calibration rather than manoeuvre
 (Section~\ref{sec:eval:camp:thrust}).
 
 \subsection{Threshold provenance}\label{sec:frame:thresholds}
@@ -1311,9 +1364,11 @@ and solution age.
 \item In the controller: validate freshness, low-pass filter and slew-limit the
 frame \eqref{eq:lpfslew}, and write $\mT$ and $\dJ$ into the model parameters
 and the hover baseline \eqref{eq:hover}.
-\item Evaluate confirmation \eqref{eq:confirm} and the \textsc{unresolved}
-timeout; switch the reference to the braking quintic \eqref{eq:quintic} if the
-timeout expires.
+\item Update the force-balance score \eqref{eq:macc}--\eqref{eq:gammaacc} from
+the latest rotor speeds and inertial specific force, and the loss watchdog;
+evaluate confirmation \eqref{eq:confirm} on it, if a release command is pending
+or the watchdog is armed, and the \textsc{unresolved} timeout; switch the
+reference to the braking quintic \eqref{eq:quintic} if the timeout expires.
 \item Shift the previous solution forward as a warm start and solve
 \eqref{eq:nmpc}. Between solves, publish at \SI{50}{\hertz} the thrust and the
 body rate interpolated along the predicted trajectory
@@ -1348,12 +1403,17 @@ increment derived from it to the controller, which updates its prediction model,
 its input baseline and its inner-loop command scaling continuously from that
 frame. Release acceptance is kept separate from that adaptation: it changes the
 lifecycle state, resets the residual force and declares completion, and it is
-gated on estimator evidence. Two properties of the design are known before any
-experiment: the lifecycle rests on the mass channel alone, and the attach-time
-inertia floor protects the inner loop at the price of not being released by
-evidence. Chapter~\ref{ch:evaluation} measures how the complete system behaves,
-including whether the always-on or the command-armed confirmation policy should
-be used.
+gated on evidence. In the deployed system that evidence is a force balance of
+the measured thrust against the inertial specific force, which does not pass
+through the mass estimate; it is opened by the release command or by a watchdog
+armed on airborne load, so a load lost without a command is also detected. Two
+properties of the design are known before any experiment: the release evidence
+inherits any error of the thrust map, and the attach-time inertia floor protects
+the inner loop at the price of being released only by a command or a detected
+loss, not by evidence of load. Chapter~\ref{ch:evaluation} measures how the
+complete system behaves: the cohort with the mass-evidence lifecycle, including
+whether its always-on or command-armed policy should be used, and the release
+campaign with the deployed force-balance rule.
 
 \end{spacing}
 \newpage

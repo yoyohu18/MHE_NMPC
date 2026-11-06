@@ -12,6 +12,11 @@
 %% 2026-11-05: added Section 5.6 (force-balance release campaign, 312 flights,
 %% release_paper_20261103_210022, scripts/gripper/aggregate_release_paper.py);
 %% not-run / missing-baseline / thrust-calibration text updated accordingly.
+%% 2026-11-06: implementation and default statements aligned with the mainline
+%% code base (MHE_NMPC, commit 5b7881e): deployed system = reduced estimator R +
+%% force-balance release rule (arm D); switchable arms, the full-state estimator
+%% and the comparison controllers remain in the campaign code base (ros2_ws_HJH).
+%% No experimental number changed.
 
 \chapter{Implementation and Experimental Evaluation}
 \label{ch:evaluation}
@@ -44,7 +49,9 @@ single atomic frame of Section~\ref{sec:frame:interface}.
 
 \begin{table}[ht]
 \centering
-\caption{Main implementation components of the deployed pipeline.}
+\caption[Main implementation components]{Main implementation components. Rows
+marked $^{\ast}$ exist only in the campaign code base; the others form the
+deployed pipeline.}
 \label{tab:software}
 \small
 \begin{tabularx}{\textwidth}{@{}l X X@{}}
@@ -59,6 +66,9 @@ odometry, actuator commands \\
 odometry, rotor speed $\rightarrow$ payload frame \eqref{eq:frame} \\
 \texttt{acados\_nmpc\_node} & Predictive control, mission sequence, confirmation &
 payload frame, state $\rightarrow$ thrust and body-rate setpoint \\
+\texttt{acc\_release\_detector} & Force-balance release evidence
+\eqref{eq:macc}--\eqref{eq:gammaacc}, inside the controller &
+rotor speed, inertial specific force $\rightarrow$ $\gamma_{\mathrm{acc}}$ \\
 \texttt{payload\_estimate} & Frame schema, evidence score \eqref{eq:gamma} &
 shared by the online nodes and the offline replay \\
 \texttt{proximity\_gripper\_node} & Grasp contact and release actuation &
@@ -66,9 +76,10 @@ proximity, grasp enable, release command \\
 \texttt{lifecycle\_trace} & Machine-readable event trace for scoring &
 every state transition, with timestamps \\
 \texttt{l1\_adaptive} & Residual specific-force estimator
-(Section~\ref{sec:model:residual}); also the comparison adaptive controller &
+(Section~\ref{sec:model:residual}); in the campaign code base also the
+comparison adaptive controller &
 odometry, rotor speed $\rightarrow$ $\hat{\bm d}$ \\
-\texttt{px4\_pid\_benchmark} & Bare-autopilot cascade baseline &
+\texttt{px4\_pid\_benchmark}$^{\ast}$ & Bare-autopilot cascade baseline &
 position setpoints only \\
 \bottomrule
 \end{tabularx}
@@ -181,6 +192,16 @@ resolved configuration. All $120$ flight records were checked and contain the
 14-state selection, lagged inertia, residual, inertia-floor hold, relative
 alignment, yaw smoothing and stated $r_z$ prior.
 
+\paragraph{Deployed system.} The deployed system differs from the evaluated
+configuration in two places: its release rule is the force-balance rule, arm~D
+of Section~\ref{sec:eval:campaign}, and its estimator is the reduced
+velocity--mass estimator of Section~\ref{sec:frame:redmodel}. Everything else
+--- controller, residual specific force, inertia-floor hold, alignment, yaw
+smoothing, arm prior, inner-loop scaling and lifecycle thresholds --- is the
+configuration above. On 5 November 2026 the deployed system was extracted from
+the campaign code base into a separate mainline code base in which these
+settings are fixed rather than switchable (Section~\ref{sec:eval:defaults}).
+
 \paragraph{Deployed estimator.} After the cohort and the release campaign, the
 experiment entry points were switched to the reduced velocity--mass estimator of
 Section~\ref{sec:frame:redmodel}. Every flight of
@@ -236,17 +257,20 @@ Section~\ref{sec:eval:limits}.
 
 \subsection{Release-acceptance arms}\label{sec:eval:arms}
 
-The release-acceptance logic is parameterised, so that the arms differ in
-exactly one factor wherever possible. Table~\ref{tab:arms} lists them. Arm~B is
-the rule originally proposed for this interface and the default of the
-implementation; arm~C differs from it only in when the persistence count may
-start.
+The release-acceptance logic of the campaign code base is parameterised, so that
+the arms differ in exactly one factor wherever possible. Table~\ref{tab:arms}
+lists them. Arm~B is the rule originally proposed for this interface and was the
+default of the implementation during the cohort; arm~C differs from it only in
+when the persistence count may start. Arm~D, the deployed rule, was added after
+the cohort and is evaluated in Section~\ref{sec:eval:campaign}.
 
 \begin{table}[ht]
 \centering
-\caption[Release-acceptance arms]{Release-acceptance arms implemented as switchable settings. In every
-arm the controller's mass and inertia follow the estimate continuously; the arms
-differ only in when a release is accepted.}
+\caption[Release-acceptance arms]{Release-acceptance arms, switchable settings
+of the campaign code base. In every arm the controller's mass and inertia follow
+the estimate continuously. Arms A--C and the oracle differ only in when a
+release is accepted; arm~D, added after the cohort and the only rule of the
+deployed controller, differs also in its evidence.}
 \label{tab:arms}
 \small
 \begin{tabularx}{\textwidth}{@{}l l X@{}}
@@ -257,6 +281,8 @@ B & Always-on confirmed & evidence score \eqref{eq:confirm} counted throughout l
 A & Command-immediate & accepts the release at the command itself, with no confirmation \\
 C & Command-armed confirmed & the same confirmation, but persistence counted only after the command arrives \\
 --- & Oracle & accepts at the true separation instant; an upper bound, not deployable, not run in the cohort \\
+\midrule
+D & Force-balance, dual-enabled & \eqref{eq:confirm} on $\gamma_{\mathrm{acc}}$, opened by the command or the loss watchdog; the deployed rule; release campaign only (Section~\ref{sec:eval:campaign}) \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -1075,7 +1101,7 @@ residual on in both arms.
 \subsection{The inertia treatment inside the estimator}\label{sec:eval:amode}
 
 Table~\ref{tab:amode} lists three treatments of the inertia increment inside the
-estimator. The lagged treatment is the deployed default; the evidence for that
+estimator. The lagged treatment was the full-state default of the campaigns; the evidence for that
 choice is a closed-loop comparison against the omitted treatment, reported below
 together with the configuration it was run in. The evidence against the live
 treatment is from single development flights.
@@ -1244,7 +1270,8 @@ differences R$-$F with bootstrap confidence intervals of the median and Wilcoxon
 signed-rank tests, by payload, speed and detachment as well as overall.
 
 \draftnote{CLOSED-LOOP RESULTS PENDING (batch mhe\_variant\_ab\_20261105\_181925,
-started 18:34, 2026-11-05). Insert: results table (loaded/post mass MAE,
+started 18:34, 2026-11-05; interrupted after flight 32 of 96, about 20:26 the
+same day --- resume or rerun before analysis). Insert: results table (loaded/post mass MAE,
 convergence, tracking RMSE loaded/post, post-release peak, solve P50/P95, solver
 status, unhealthy time, saturation; R better/same/worse), binary outcomes per arm
 (divergence, early confirmation, missed, UNRESOLVED, model cleared, safe hover),
@@ -1344,7 +1371,7 @@ confirmation is sound only while the mass estimate is: where the estimate collap
 under manoeuvre, a confirmation rule that admits no other evidence will confirm a
 release that has not happened. The remedies available within the present
 architecture are the lagged inertia treatment of Section~\ref{sec:eval:amode},
-now the default, which halves the bias but does not remove it; the inertia-floor
+the full-state default of the campaigns, which halves the bias but does not remove it; the inertia-floor
 hold and the residual specific force, both in the evaluated configuration, which
 address two of its consequences (loss of inner-loop authority and loss of thrust
 feed-forward) without touching its cause; and the command-armed arm~C, which removes the false confirmation
@@ -1414,18 +1441,34 @@ implemented.
 
 \subsection{Configuration and default-safety}\label{sec:eval:defaults}
 
-The mass-only configuration is selected by an environment switch whose default
-in both experiment entry points is the 14-state form, and the estimator reports
-at startup which lifecycle path is active. A second switch selects the estimator
-model; since 5 November 2026 both entry points default to the reduced estimator,
-which requires the mass-only form, and the estimator reports the selected model
-at startup. The cohort and the campaign predate that change and ran the
-full-state model. The estimator node's own library
-default is still the 16-state form with an augmented first moment, which this
-dissertation does not use: a node started directly, without an entry point,
+Two code bases are involved, and a statement about a default must name one.
+Every flight reported in this chapter was run from the \emph{campaign code
+base}, in which the configuration is selected by switches. The \emph{mainline
+code base}, extracted from it on 5 November 2026, contains the deployed system
+only.
+
+In the campaign code base the mass-only configuration is selected by an
+environment switch whose default in both experiment entry points is the 14-state
+form, and the estimator reports at startup which lifecycle path is active. A
+second switch selects the estimator model; since 5 November 2026 both entry
+points default to the reduced estimator, which requires the mass-only form, and
+the estimator reports the selected model at startup. The cohort and the campaign
+predate that change and ran the full-state model. The estimator node's own
+library default is still the 16-state form with an augmented first moment, which
+this dissertation does not use: a node started directly, without an entry point,
 runs that form. Entry-point defaults and library defaults are therefore not
-interchangeable, and statements about defaults in this dissertation refer to the
-entry points. A configuration
+interchangeable, and statements about campaign defaults in this dissertation
+refer to the entry points.
+
+The mainline code base removes that hazard by removing the switches. Its
+estimator node implements the reduced estimator only. Its controller node has no
+setting for the release rule, the controller type, offset compensation or the
+inertia-floor hand-over, and its parameter defaults are the deployed values, so
+a node started without any argument runs the deployed system; the launch script
+passes only the experiment variables (payload, speed, detachment delay,
+thrust-map gain, injected loss and jam). Whether the extraction preserved the
+controller's behaviour was checked rather than assumed
+(Section~\ref{sec:eval:repro}). A configuration
 that does not match the one described here must be detectable from the run
 record alone, which is why every run records the resolved value of every
 behaviour-affecting switch (Appendix~B).
@@ -1562,6 +1605,25 @@ including two that end at the iteration limit, the controller's solution with
 and without them was bitwise identical, iteration counts included, so the
 removal changes the description of the controller in
 Section~\ref{sec:model:ctrl} and not its behaviour.
+
+The mainline code base was produced from the campaign code base by removing
+every controller branch that the deployed configuration never executes, and by
+making the deployed parameter values the defaults; the controller node shrank
+from 3712 to 1707 lines. Because the controller runs in closed loop, there is no
+recorded input stream to replay through it, so equivalence was tested with an
+offline harness: both versions of the controller node ran in-process against
+simulated clocks, publishers, subscriptions, timers and services, closed around
+one deterministic synthetic plant, through a complete mission from approach to
+confirmed release. In seven scenarios --- nominal release, detachment delayed by
+\SI{4}{\second}, uncommanded loss, a jammed gripper reaching
+\textsc{unresolved}, a thrust-map gain of $0.9$, \SI{4}{\meter\per\second} and
+\SI{0.15}{\kg} --- all $19\,556$ published messages and all $5\,597$ run-time log
+lines of the two versions were bitwise identical, both when the mainline node was
+given the campaign's full parameter list and when it was given only the
+experiment variables. One software-in-the-loop flight of the mainline system at
+\SI{0.30}{\kg} and \SI{2}{\meter\per\second} completed the mission, with the
+release confirmed \SI{2.4}{\second} after the command and no controller solver
+failure. This is a regression check of the extraction, not an evaluation result.
 
 \section{Chapter Summary}\label{sec:eval:summary}
 

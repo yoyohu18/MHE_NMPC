@@ -9,12 +9,12 @@
 
 \begin{table}[ht]
 \centering
-\caption{NMPC configuration (evaluated configuration).}
-\begin{tabular}{@{}ll@{}}
+\caption{NMPC configuration (evaluated configuration and deployed controller).}
+\begin{tabular}{@{}l p{0.55\textwidth}@{}}
 \toprule
 State dimension & 13 \\
 Input dimension & 4 \\
-Runtime parameter dimension & 23 \\
+Runtime parameter dimension & 23 in the reported flights (three unused slots held at zero); 20 deployed, \eqref{eq:pnmpc} \\
 Prediction stages & $N=20$ \\
 Sampling interval & $\Delta t=\SI{0.05}{\second}$ \\
 Prediction horizon & \SI{1.0}{\second} \\
@@ -36,14 +36,14 @@ Terminal scaling & $20\times$ pos., $1\times$ vel., $2\times$ att., $0.2\times$ 
 \centering
 \caption{MHE configuration. The full-state estimator is the evaluated
 configuration of the cohort and the release campaign; the reduced estimator is
-the deployed default since 5 November 2026; the prior-free column lists the
+the deployed estimator and the only one in the mainline code base; the prior-free column lists the
 values taken by the full-state ablation of Section~\ref{sec:frame:health}.}
 \small
 \begin{tabularx}{\textwidth}{@{}p{0.27\textwidth} X X p{0.17\textwidth}@{}}
 \toprule
  & \textbf{Full-state (evaluated)} & \textbf{Reduced (deployed)} & \textbf{Prior-free ablation} \\
 \midrule
-Model selection$^{a}$ & \texttt{full} (library default) & \texttt{reduced} (entry-point default) & \texttt{full} \\
+Model selection$^{a}$ & \texttt{full} (campaign library default) & \texttt{reduced} (campaign entry-point default; only model in the mainline code base) & \texttt{full} \\
 State dimension & 14 ($x$, $\mT$) & 4 ($\bm v$, $\mT$) & 14 \\
 Process-noise dimension & 13 (physical states only) & 3 (velocity) & 13 \\
 Runtime parameter dimension & 7 (wrench; lagged $\dJ$; $c_x=c_y=0$) & 5 (measured unit quaternion; $\Tphys$) & 7 \\
@@ -54,8 +54,8 @@ Mass box$^{b}$ & $[0.95\,\mB,\ \SI{5.0}{\kg}]$ & $[0.70\,\mB,\ \SI{5.0}{\kg}]$ &
 Mass-health band & none & \eqref{eq:healthband}, $[\SI{1.964}{\kg},\SI{2.464}{\kg}]$; recover after 10 solves & none \\
 Mass arrival $\sigma$ & \SI{3.16}{\kg} & \SI{3.16}{\kg} & \SI{1000}{\kg} \\
 Initial iterate & window force balance \eqref{eq:winbal} & same & same \\
-Estimator inertia increment$^{c}$ & lagged, \eqref{eq:Afrozen} (entry-point default; library default omitted) & none & lagged \\
-Mass-only selection$^{d}$ & on (entry-point default; library default off) & required & same \\
+Estimator inertia increment$^{c}$ & lagged, \eqref{eq:Afrozen} (campaign entry-point default; library default omitted) & none & lagged \\
+Mass-only selection$^{d}$ & on (campaign entry-point default; library default off) & required & same \\
 Stage weighting $\beta_j$ & residual-triggered de-weighting enabled, uniform in effect (Section~\ref{sec:frame:beta}) & same, rebuilt on the reduced blocks & same \\
 Solver failure & re-anchor after 5 consecutive failures; seed adopted as estimate & re-initialise after 5; last valid estimate held, frame unhealthy & as full-state \\
 Output filter & first order, $\tau=\SI{0.25}{\second}$ & same & same \\
@@ -63,14 +63,14 @@ NLP / QP method & Full SQP / partial-condensing HPIPM & same & same \\
 \bottomrule
 \end{tabularx}
 \\[3pt]
-{\footnotesize Switches: $^{a}$\,\texttt{MHE\_MODEL\_VARIANT};
+{\footnotesize Switches of the campaign code base: $^{a}$\,\texttt{MHE\_MODEL\_VARIANT};
 $^{b}$\,reduced: \texttt{MHE\_REDUCED\_M\_MIN}, \texttt{MHE\_REDUCED\_M\_MAX};
-$^{c}$\,\texttt{MHE\_DJ\_EXT=1}; $^{d}$\,\texttt{MHE\_ESTIMATE\_MOMENT=0}.}
+$^{c}$\,\texttt{MHE\_DJ\_EXT=1}; $^{d}$\,\texttt{MHE\_ESTIMATE\_MOMENT=0}. Of these, only $^{b}$ exists in the mainline code base.}
 \end{table}
 
 \begin{table}[ht]
 \centering
-\caption{Payload interface, lifecycle and task settings (evaluated configuration).}
+\caption{Payload interface, lifecycle and task settings (evaluated configuration). Rows marked $^{\ddagger}$ are where the deployed system differs or adds.}
 \small
 \begin{tabularx}{\textwidth}{@{}p{0.40\textwidth} X@{}}
 \toprule
@@ -82,14 +82,17 @@ Controller-side filter $\tau$ & \SI{0.20}{\second} \\
 Slew limits ($\mT$ / $\dJ$) & $0.60$\,kg/s / $0.080$\,kg\,m$^2$/s \\
 Evidence-score mode & mass only (no inertia factor) \\
 Payload-mass score thresholds & $(0.015,0.060)$\,kg \\
-Confirmation & $\gamma\ge0.90$ held \SI{1.0}{\second} \\
+Confirmation & cohort: $\gamma\ge0.90$ held \SI{1.0}{\second} on healthy frames \\
+Confirmation (campaign arm~D, deployed)$^{\ddagger}$ & $\gamma_{\mathrm{acc}}\ge0.90$ held \SI{1.0}{\second} on fresh evidence, opened by the release command or the loss watchdog \\
+Force-balance score$^{\ddagger}$ & \eqref{eq:macc}--\eqref{eq:gammaacc}; low-pass \SI{0.5}{\second}, output \SI{0.25}{\second}; fresh within \SI{0.2}{\second}; thresholds $(0.015,0.060)$\,kg \\
+Loss watchdog$^{\ddagger}$ & arms after lift start on $\gamma_{\mathrm{acc}}<0.75$ for \SI{2.0}{\second}; cleared at the next pickup \\
 Presence entry / exit & $\mP>\SI{0.09}{\kg}$ for \SI{2}{\second} / $\mP<\SI{0.02}{\kg}$ for \SI{5}{\second} in quiet flight \\
 Quiet-flight test & $\lVert\bm\omega\rVert\le\SI{0.15}{\radian\per\second}$, $\lVert\bm v_{xy}\rVert\le\SI{0.20}{\meter\per\second}$ \\
 \textsc{unresolved} timeout / brake duration & \SI{12}{\second} / \SI{3}{\second} \\
 Body-rate scale cap / dead band & $5.0$ / $0.08$ \\
 Body-rate scale $\tau$ / rise / recover & \SI{0.5}{\second} / $4.0$\,s$^{-1}$ / $1.5$\,s$^{-1}$ \\
 Body-rate headroom fraction / hard limit & $0.95$ / \SI{2.0}{\radian\per\second} \\
-Attach inertia bootstrap & envelope \SI{0.30}{\kg} ($\dJ=\SI{0.0191}{\kg\meter\squared}$, $\kappa=2.34$); fade \SI{0.5}{\second}; hold until command$^{\dagger}$ \\
+Attach inertia bootstrap & envelope \SI{0.30}{\kg} ($\dJ=\SI{0.0191}{\kg\meter\squared}$, $\kappa=2.34$); fade \SI{0.5}{\second}; hold until command$^{\dagger}$, deployed also ended by a detected uncommanded loss$^{\ddagger}$ \\
 Residual specific force$^{\dagger}$ & $a=10$, $\omega_c=\SI{0.5}{\radian\per\second}$, nominal mass $\hat m$ \\
 Relative alignment$^{\dagger}$ & tolerance \SI{0.012}{\meter}, wait $\le\SI{4}{\second}$ \\
 Figure-eight yaw smoothing$^{\dagger}$ & on \\
@@ -97,7 +100,8 @@ Controller offset compensation & off ($\cvec\equiv\bm 0$) \\
 Release & at the figure-eight tip after \SI{45}{\second} loaded carry \\
 \midrule
 \multicolumn{2}{@{}p{0.95\textwidth}@{}}{\footnotesize $^{\dagger}$\,Set explicitly by
-the cohort driver; off at the experiment entry points. The geometry-release mode,
+the cohort driver; off at the experiment entry points of the campaign code base,
+fixed on in the mainline code base. The geometry-release mode,
 moment-based offset and release options and moment over-range re-anchoring
 appear in launch records but are inert in the mass-only form; the residual event
 trigger is active but rarely changes the stage weights (Section~\ref{sec:frame:beta}).} \\

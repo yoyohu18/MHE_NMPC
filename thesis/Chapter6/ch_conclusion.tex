@@ -19,8 +19,9 @@ and pitch inertia increment follows, and assigned the identification of that
 mass to the translational channel. Chapter~\ref{ch:framework} built a
 moving-horizon estimator driven by a wrench reconstructed from rotor speeds, a
 predictive controller updated continuously from one health-gated estimate, and a
-release lifecycle in which acceptance of a release is gated on evidence ---
-from the estimator, or from an independent force balance. Chapter~\ref{ch:evaluation}
+release lifecycle in which acceptance of a release is gated on evidence --- in
+the deployed form an independent force balance, in the evaluation cohort the
+estimator's mass evidence. Chapter~\ref{ch:evaluation}
 evaluated the system in PX4/Gazebo software-in-the-loop simulation with a frozen
 cohort of $120$ flight attempts, two smaller frozen ablations and a second frozen
 campaign of $312$ flights. The findings below answer the five research
@@ -184,8 +185,10 @@ only by the release command, so a load lost without a command leaves it in
 place; under the force-balance rule a detected loss ends it, but detection
 depends on the thrust map. The release command is not gated on estimator
 health. The evaluated configuration includes settings that are not
-the defaults of the experiment entry points, and the results are claims about
-that configuration.
+the defaults of the campaign code base's experiment entry points, and the results
+are claims about that configuration; in the mainline code base those settings are
+the defaults, and the deployed system differs from the evaluated configuration
+only in its release rule and its estimator (Section~\ref{sec:eval:config}).
 
 \section{Future Work}
 

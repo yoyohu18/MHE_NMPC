@@ -1,6 +1,7 @@
 %=== CHAPTER ONE ===
 %% Rewritten 2026-10-30 for the 14-state mass-only interface; 2026-11-05: the
 %% deployed estimator is the reduced velocity--mass MHE (contribution 2).
+%% 2026-11-06: contribution 3 leads with the deployed force-balance release rule.
 
 \chapter{Introduction}
 \label{ch:introduction}
@@ -103,7 +104,7 @@ channel, while keeping the mass from absorbing rotational model error
 and inner-loop command scaling are updated continuously from one health-gated
 estimate (Chapter~\ref{ch:framework});
 \item define a release lifecycle that separates the release command from the
-physical detachment by gating release acceptance on estimator evidence, and that
+physical detachment by gating release acceptance on measured evidence, and that
 holds an unconfirmed release as \textsc{unresolved} rather than assuming it
 complete (Chapter~\ref{ch:framework});
 \item evaluate the complete interface in software-in-the-loop simulation with a
@@ -169,16 +170,20 @@ Sections~\ref{sec:eval:amode}, \ref{sec:eval:reduced}).
 \draftnote{Add the closed-loop F/R result to this contribution once
 mhe\_variant\_ab\_20261105\_181925 is analysed.}
 
-\item \textbf{A continuous estimate-driven controller interface with a
-command-armed, estimator-confirmed release lifecycle.} One health-gated frame
-updates the controller's prediction model, input baseline and inner-loop scaling
-continuously; release acceptance is a separate decision, taken on estimator
-evidence once a release has been commanded. In the evaluation it never accepted a
-release while a delayed payload was still attached, and, unlike an always-on
-variant of the same rule, it produced no false acceptance during high-speed
-carry. A variant on independent force-balance evidence, enabled additionally by
-an airborne-load watchdog, also detected every load lost without a command in
-the evaluation, at the price of sensitivity to the thrust map
+\item \textbf{A continuous estimate-driven controller interface with an
+evidence-confirmed release lifecycle.} One health-gated frame updates the
+controller's prediction model, input baseline and inner-loop scaling
+continuously; release acceptance is a separate decision, taken only on evidence
+that the payload has left. In the deployed form that evidence is a force balance
+of the thrust reconstructed from rotor speeds against the specific force measured
+by the inertial unit, which does not pass through the mass estimate, and it is
+opened by the release command or by a watchdog armed on airborne load. In the
+release campaign it produced no false acceptance during carry, never accepted a
+release while a delayed payload was still attached, detected every load lost
+without a command and accepted no jammed release, at the price of sensitivity to
+the thrust map. In the cohort, the same lifecycle on the estimator's own mass
+evidence was sound only when armed by the release command: run throughout carry,
+it accepted releases that had not happened during high-speed flight
 (Chapter~\ref{ch:framework} and Sections~\ref{sec:eval:results}
 and~\ref{sec:eval:campaign}).
 

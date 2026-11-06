@@ -12,6 +12,8 @@
 %% (sec:model:seed, eq:nmpc, eq:hover, eq:envelope, sec:model:residual, ...),
 %% so cross-references resolve unchanged.  Experimental numbers live in
 %% Chapter 5.  The pre-restructure source is in git history.
+%% 2026-11-06: implementation notes aligned with the mainline code base, which
+%% contains only the reduced estimator.
 
 \chapter{Modeling and Parameter Structure}
 \label{ch:model}
@@ -410,18 +412,18 @@ treatments within the full-state estimator.}
 \toprule
 Treatment & $\dJ$ inside the estimator & $\partial\dot{\bm\omega}/\partial \mT$ & Status \\
 \midrule
-omitted & $0$ & zero & available, off \\
-lagged & \eqref{eq:dJofm} at the previous solution $\hat m^{-}$ & zero & evaluation campaigns \\
+omitted & $0$ & zero & not used \\
+lagged & \eqref{eq:dJofm} at the previous solution $\hat m^{-}$ & zero & campaigns \\
 live & \eqref{eq:dJofm} at the decision variable $\mT$ & non-zero & rejected \\
 \midrule
-not integrated (reduced) & none; attitude measured & --- & deployed default \\
+not integrated (reduced) & none; attitude measured & --- & deployed \\
 \bottomrule
 \end{tabular}
-\\[4pt]
+\par\vspace{4pt}
 \footnotesize The corresponding implementation settings are listed in Appendix~A.
-The lagged treatment is the full-state default of the experiment entry points;
-the library default of the full-state estimator remains the omitted treatment.
-Since 5 November 2026 the entry points select the reduced estimator.
+The first three rows exist only in the campaign code base, where the lagged
+treatment was the full-state default of the experiment entry points; the
+mainline code base contains only the reduced estimator.
 \end{table}
 
 The omitted treatment satisfies \eqref{eq:nodwdm} with the wrong inertia; the
@@ -522,9 +524,10 @@ platform's \SI{0.30}{\kg} payload \emph{envelope}, which sets the inertia floor
 of the attach-time bootstrap (Section~\ref{sec:frame:bootstrap}). Both are
 specifications of the airframe and its gripper, in the same category as $\Jb$ or
 the actuator envelope, and neither is the mass of the parcel carried on a
-particular flight. The controller's own release command is used to start the
-confirmation timeout, to end the inertia floor and to gate the reset of the
-residual force (Chapter~\ref{ch:framework}); it does not set the payload mass.
+particular flight. The controller's own release command is used to open the
+release confirmation, to start its timeout, to end the inertia floor and to
+classify an acceptance as a delivered rather than a lost load
+(Chapter~\ref{ch:framework}); it does not set the payload mass.
 
 \section{Measured-Input Reconstruction and Model Interfaces}\label{sec:model:phys}
 

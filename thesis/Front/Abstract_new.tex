@@ -25,7 +25,9 @@ model has no path to the mass.
 closed-loop comparison once the closed-loop result is in.} One
 health-gated estimate updates a nonlinear model predictive controller
 continuously; a separate lifecycle accepts a release only when evidence
-confirms that the payload has left.
+confirms that the payload has left --- in the deployed form, a force balance of
+the reconstructed thrust against the specific force measured by the inertial
+unit, which does not pass through the mass estimate.
 
 The system is evaluated in PX4/Gazebo software-in-the-loop simulation with
 acados solvers, using a frozen, block-randomised cohort of $120$ flight attempts
