@@ -172,7 +172,8 @@ full-state (14-state) mass-only MHE of Section~\ref{sec:model:mhe} at
 stage weights that were uniform in effect (Section~\ref{sec:frame:beta}), the
 $0.95\,\mB$ lower bound,
 lagged inertia \eqref{eq:Afrozen}, $r_z=\SI{-0.27}{\meter}$, window-balance
-seeding and the mass-only evidence score \eqref{eq:gamma}. It feeds the 13-state
+seeding and, in the cohort, the earlier product form of the evidence score
+\eqref{eq:gamma} (see \emph{Historical scoring} below). It feeds the 13-state
 NMPC at \SI{20}{\hertz}. The cohort additionally
 sets five non-default choices explicitly:
 \begin{enumerate}
@@ -213,16 +214,19 @@ Section~\ref{sec:eval:reduced}. Results that depend on the estimator's model ---
 the mass bias and its manoeuvre-induced collapse in particular --- should not be
 transferred to the reduced estimator without that evidence.
 
-\paragraph{Result-version warning.}
-The numerical cohort tables in this working revision were collected with the
-earlier product score, which multiplied the mass score by an inertia score
-derived from the same mass estimate. They remain useful as historical system
-data but do not constitute final closed-loop validation of \eqref{eq:gamma}.
-The cohort driver now selects the mass-only score explicitly; the tables and
-effect summaries in this chapter must be regenerated from that rerun before the
-dissertation is submitted. Offline replay found no timing change in 68 of 71
-score-confirmed flights and a \SI{0.1}{\second} advance in the other three, but
-replay is not a substitute for the planned closed-loop rerun.
+\paragraph{Historical scoring.}
+The cohort of Sections~\ref{sec:eval:cohort}--\ref{sec:eval:results} was flown
+with an earlier product score, which multiplied the mass score of
+\eqref{eq:gamma} by an inertia score derived from the same mass estimate. Its
+results are therefore reported as results of that historical configuration.
+They are not a closed-loop validation of the mass-only score \eqref{eq:gamma},
+and no closed-loop rerun with the mass-only score was made: the deployed system
+does not release on the mass score at all, but on the force balance of arm~D
+(Section~\ref{sec:eval:campaign}). Offline replay of the cohort with the
+mass-only score found no change in acceptance time in 68 of 71 score-confirmed
+flights and a \SI{0.1}{\second} advance in the other three. This indicates that
+the two scores would have behaved alike in these flights, but it is a replay of
+recorded data, not a closed-loop result.
 
 \subsection{The full-state estimator and the mass-evidence lifecycle}\label{sec:model:mhe}
 
@@ -291,7 +295,8 @@ with no health check, and after five consecutive solver failures it adopted the
 window-balance seed as its estimate.
 
 \paragraph{Mass-evidence lifecycle.} The cohort accepted a release on the
-estimator's mass score $\gamma$ of \eqref{eq:gamma} instead of
+estimator's mass score $\gamma$ of \eqref{eq:gamma}, in the product form noted
+under \emph{Historical scoring} in Section~\ref{sec:eval:config}, instead of
 $\gamma_{\mathrm{acc}}$: the persistence test of \eqref{eq:confirm},
 $\gamma\ge0.90$ held for \SI{1.0}{\second}, on healthy, fresh frames. It had two
 arming policies: \emph{always-on} counted the persistence throughout loaded
@@ -402,8 +407,9 @@ empty airframe keeps flying with the envelope inner-loop scale, and smoke flight
 of this scenario showed pitch-moment saturation in 8--31\,\% of samples. A
 partial-loss scenario and a thrust-map mismatch scenario were also designed but
 were not run in the cohort; Section~\ref{sec:eval:notrun} states what is and is
-not known about them. Uncommanded loss and a thrust-map error in the release
-detector were later flown under the force-balance rule, which ends the inertia
+not known about them. Uncommanded loss and a thrust-map error, applied to the
+thrust shared by the estimator and the release detector, were later flown under
+the force-balance rule, which ends the inertia
 floor on detected loss (Section~\ref{sec:eval:campaign}).
 
 \section{Cohort Design, Eligibility and Metrics}\label{sec:eval:cohort}
@@ -833,12 +839,17 @@ the inertia floor and the inner-loop scheduling, and differ only in their
 translational compensation. \emph{Fixed} keeps the bare-airframe mass in the
 prediction model with no translational adaptation. \emph{$\mathcal{L}_1$} keeps
 the same mass and compensates with the residual $\hat{\bm d}$ alone. \emph{MHE}
-is the evaluated configuration, with the estimated mass and $\hat{\bm d}$. In
-E3 the thrust \eqref{eq:macc} seen by the force-balance detector is scaled by a
-fixed factor; the plant, the controller's thrust map and the residual are
-unchanged, the payload mass and thresholds are not altered, and the factor
-actually applied is recorded in each flight's log ($0.900$ and $1.100$ in $24$
-flights each). In E4 an \emph{uncommanded loss} detaches the payload at the
+is the evaluated configuration, with the estimated mass and $\hat{\bm d}$. E3
+models a miscalibrated thrust coefficient $k_f$ on the estimation side: the thrust
+reconstructed from rotor speeds is scaled by a fixed factor in both of its
+consumers, the estimator's thrust input and the thrust \eqref{eq:macc} of the
+force-balance detector. The plant's rotor coefficient, the controller's
+thrust-to-throttle map and the thrust used by the residual $\hat{\bm d}$ keep the
+nominal $k_f$. The payload mass and thresholds are not altered, and the factor
+actually applied is recorded in the estimator's and the controller's log of
+every flight ($0.900$ and $1.100$ in $24$ flights each). Because the estimated
+mass enters the controller's model, the error also reaches the control input,
+through the mass estimate. In E4 an \emph{uncommanded loss} detaches the payload at the
 release phase with no command, no pending release and no notification to the
 estimator. A \emph{jammed gripper} receives the normal command and never
 releases.
@@ -981,8 +992,9 @@ reference and came to hover, with a largest speed in hover of
 
 \begin{table}[ht]
 \centering
-\caption[Thrust-map error in the force-balance detector (E3)]{Thrust-map error
-in the force-balance detector (E3), six flights per cell. $m_{\mathrm{acc}}$
+\caption[Estimation-side thrust-map error (E3)]{Estimation-side thrust-map
+error (E3), applied to the estimator and the force-balance detector together;
+detector quantities shown, six flights per cell. $m_{\mathrm{acc}}$
 bias: median error relative to the true composite mass, in loaded carry and
 after release. $\gamma_{\mathrm{acc}}$ max: median over flights of the largest
 score in loaded carry. Delay from the command.}
@@ -1031,6 +1043,17 @@ same rule would be expected to accept before the payload left. With the heavier
 payload the watchdog armed, but the largest carry score reached $0.85$ in one
 flight, close to the $0.90$ threshold. The dual enabling prevented every false
 acceptance in E3; it cannot restore evidence the thrust map has removed.
+
+\emph{The estimator's mass.} The same error reached the controller's model
+through the estimate. During loaded carry (from \SI{5}{\second} after lift to the
+command), the median mass in the controller's model was
+\SIrange{7.4}{9.2}{\percent} above truth with the map $1.10$. With the map $0.90$
+it stayed at the bare-airframe value in all four conditions (cell medians
+\SIrange{2.064}{2.076}{\kg}, against \SI{2.214}{\kg} and \SI{2.364}{\kg} of truth):
+the payload was never recognised in the controller's model. This is the first of
+the two failures predicted in Section~\ref{sec:eval:thrustcal}, and the replay of
+Section~\ref{sec:eval:reduced} shows the full-state estimate pressed against its
+$0.95\,\mB$ bound in this case. None of the $48$ flights of E3 diverged.
 
 \subsection{Fixed, $\mathcal{L}_1$ and MHE controllers}\label{sec:eval:camp:ctrl}
 
@@ -1097,9 +1120,10 @@ E2 does not test the rotational benefit of the payload model.
 
 The campaign has the limitations of the cohort --- simulation only, one
 airframe and gripper geometry, centred grasps, no wind --- and some of its own.
-The thrust-map error was applied to the detector's input alone; neither the
-estimator's mass channel nor the plant was perturbed, and E3 used only nominal
-release. Every zero-count result is bounded by the cell sizes: an upper bound of
+The thrust-map error was applied to the estimator and the detector together.
+The plant, the controller's thrust-to-throttle map and the residual were not
+perturbed, so E3 does not represent an error that also affects the actuation
+side. E3 also used only nominal release. Every zero-count result is bounded by the cell sizes: an upper bound of
 $0.10$ for early acceptance and $0.14$ for false acceptance under a jam. The
 interface code of the campaign was not committed; the record holds the base
 revision, a patch of the uncommitted changes and an archive of untracked files,
@@ -1638,13 +1662,16 @@ arithmetic predicts two failures: a coefficient reading low may leave the
 payload unrecognised, and one reading high may leave a phantom payload after
 release, so that confirmation never arrives. The direction matters: the second
 degrades toward \textsc{unresolved}, which is safe, the first toward an
-unrecognised payload, which is not. For the estimator's mass these remain
-predictions; no mismatch was applied to the estimator. The force-balance
-detector of Section~\ref{sec:frame:accdet} has the same one-for-one sensitivity,
-and a $\pm\SI{10}{\percent}$ error in its thrust was flown: both predicted
-failures occurred, a miss ending in \textsc{unresolved} on one side and, on
-the other, a lighter payload read as absent, which silently disabled the
-uncommanded-loss watchdog (Section~\ref{sec:eval:camp:thrust}).
+unrecognised payload, which is not. The force-balance detector of
+Section~\ref{sec:frame:accdet} has the same one-for-one sensitivity. A
+$\pm\SI{10}{\percent}$ error was flown in the thrust shared by the estimator and
+the detector (Section~\ref{sec:eval:camp:thrust}), and both predicted failures
+occurred. With the map high, the release was missed and the flight ended in
+\textsc{unresolved}, and the controller's model mass in carry was 7--9\,\% heavy.
+With the map low, the lighter payload read as absent in the detector, which
+silently disabled the uncommanded-loss watchdog, and the controller's model
+held the bare-airframe mass with either payload. The designed
+$\pm\SI{5}{\percent}$ level has not been flown.
 
 \subsection{Experiments designed but not run}\label{sec:eval:notrun}\label{sec:eval:partial}\label{sec:eval:seed}
 
@@ -1652,10 +1679,11 @@ Three experiments were designed for this dissertation but not run in the
 evaluated configuration. They are listed so that their absence is explicit; no
 result is claimed for any of them.
 \begin{itemize}
-\item \textbf{Thrust-map mismatch in the estimator} ($k_f$ scaled by $0.95$ and
-$1.05$ in the estimator only). Its expected effect is the analytical sensitivity
-of Section~\ref{sec:eval:thrustcal}; only the release detector's thrust was
-perturbed in the campaign (Section~\ref{sec:eval:camp:thrust}).
+\item \textbf{Small thrust-map mismatch} ($k_f$ scaled by $0.95$ and $1.05$).
+Its expected effect is the analytical sensitivity of
+Section~\ref{sec:eval:thrustcal}. Only the $\pm\SI{10}{\percent}$ level was
+flown, in the estimator and the detector together
+(Section~\ref{sec:eval:camp:thrust}).
 \item \textbf{Partial payload loss} (four \SI{0.05}{\kg} boxes, three removed
 one at a time without a signal, against a no-loss control arm). This is the case
 a binary attached/detached abstraction cannot represent at all, and the one where
