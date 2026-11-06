@@ -28,8 +28,8 @@ interface in software-in-the-loop simulation and characterising where it fails.
 The evidence comes from five sources of different standing, which are kept apart
 throughout (Section~\ref{sec:eval:evidence}). The primary results are those of a
 frozen, block-randomised cohort of $120$ flights in the evaluated configuration
-of Section~\ref{sec:eval:config}; two smaller frozen batches isolate the residual
-specific force and the estimator's inertia treatment; a second frozen campaign
+of Section~\ref{sec:eval:config}; a smaller frozen batch isolates the residual
+specific force; a second frozen campaign
 of $312$ flights tests an independent force-balance release rule, uncommanded
 loss, a jammed gripper, thrust-map error and fixed and $\mathcal{L}_1$
 baselines (Section~\ref{sec:eval:campaign}); and development flights in
@@ -224,6 +224,83 @@ dissertation is submitted. Offline replay found no timing change in 68 of 71
 score-confirmed flights and a \SI{0.1}{\second} advance in the other three, but
 replay is not a substitute for the planned closed-loop rerun.
 
+\subsection{The full-state estimator and the mass-evidence lifecycle}\label{sec:model:mhe}
+
+Neither belongs to the system of Chapters~\ref{ch:model} and~\ref{ch:framework};
+they are stated here because every flight of
+Sections~\ref{sec:eval:results}--\ref{sec:eval:campaign} and of the failure-mode
+analysis used the first, and the cohort used the second.
+
+\paragraph{Full-state estimator F.} F integrates the complete vehicle model and
+augments the composite mass into its state,
+\begin{equation}
+x_{\mathrm{aug}} = \bigl[\,x;\; \mT\,\bigr] \in \mathbb{R}^{14},
+\qquad \dot{\mT} = 0,
+\label{eq:xaug}
+\end{equation}
+with process noise on the thirteen physical states only. Its known parameters
+are the reconstructed wrench of \eqref{eq:phys} and a geometry slot,
+\begin{equation}
+p_{\mathrm{MHE}} = \bigl[\, \Tphys;\; \tauphys;\; \dJ^{\mathrm{est}};\; c^{\mathrm{est}}_x;\; c^{\mathrm{est}}_y \,\bigr] \in \mathbb{R}^{7},
+\label{eq:pmhe}
+\end{equation}
+and its stage residual is the full measurement residual
+\begin{equation}
+\bm e_i \;=\; \bm y_i - x_i
+\;=\; \bigl[\,\bm e^p_i;\ \bm e^v_i;\ \bm e^q_i;\ \bm e^{\omega}_i\,\bigr]
+\in \mathbb{R}^{13},
+\label{eq:mheresid}
+\end{equation}
+with a component-wise quaternion difference in $\bm e^q$. F keeps the mass off
+the rotational channel by removing only the direct sensitivity,
+\begin{equation}
+\frac{\partial \dot{\bm\omega}}{\partial \mT}\bigg|_{\text{estimator}} = 0 ,
+\label{eq:nodwdm}
+\end{equation}
+and inserts the inertia increment as a known parameter computed from the previous
+solution $\hat m^{-}$ and held constant within the window,
+\begin{equation}
+\dJ^{\mathrm{lag}} = \frac{\mB\,\bigl(\hat m^{-}-\mB\bigr)^{+}}{\hat m^{-}}\; r_z^2,
+\qquad
+\frac{\partial \dJ^{\mathrm{lag}}}{\partial \mT}\bigg|_{\text{window}} = 0,
+\label{eq:Afrozen}
+\end{equation}
+refreshed at the \SI{10}{\hertz} window rate, with the positive part smoothed over
+\SI{0.02}{\kg}; the two offsets are zero. Both indirect couplings of
+Section~\ref{sec:model:rotchannel} therefore remain in F. It is solved as
+\eqref{eq:mhe} with $C$ selecting the thirteen vehicle states and process noise
+on all of them, at the same horizon and rate as the deployed estimator, with
+\begin{equation}
+W_y = \mathrm{diag}\Bigl(\sigma_p^{-2}I_3,\ \sigma_v^{-2}I_3,\ \sigma_q^{-2}I_4,\ \sigma_\omega^{-2}I_3\Bigr),
+\label{eq:Wy}
+\end{equation}
+$\sigma_p=\SI{0.02}{\meter}$, $\sigma_v=\SI{0.05}{\meter\per\second}$,
+$\sigma_q=0.01$, $\sigma_\omega=\SI{0.02}{\radian\per\second}$,
+\begin{equation}
+W_w = \mathrm{diag}\bigl(10^{4} I_6,\ 10^{5} I_4,\ 10^{3} I_3\bigr),
+\label{eq:Ww}
+\end{equation}
+\begin{equation}
+W_0 = \mathrm{diag}\bigl(10^{3} I_6,\ 10^{4} I_4,\ 10^{2} I_3,\ \sigma_{m,0}^{-2}\bigr),
+\label{eq:W0}
+\end{equation}
+whose velocity and mass entries are those of \eqref{eq:Wred}, so that the
+comparison of Section~\ref{sec:eval:reduced} isolates the model structure rather
+than a retuning. Its mass was held in a hard box $[0.95\,\mB,\ \SI{5.0}{\kg}]$
+with no health check, and after five consecutive solver failures it adopted the
+window-balance seed as its estimate.
+
+\paragraph{Mass-evidence lifecycle.} The cohort accepted a release on the
+estimator's mass score $\gamma$ of \eqref{eq:gamma} instead of
+$\gamma_{\mathrm{acc}}$: the persistence test of \eqref{eq:confirm},
+$\gamma\ge0.90$ held for \SI{1.0}{\second}, on healthy, fresh frames. It had two
+arming policies: \emph{always-on} counted the persistence throughout loaded
+flight, \emph{command-armed} only after the release command. There was no loss
+watchdog, the attach-time inertia floor was ended only by the release command,
+and an acceptance with no command outstanding did not reset the residual
+$\hat{\bm d}$. The release arms of Section~\ref{sec:eval:arms} are built on this
+lifecycle.
+
 \section{Experimental Questions and Hypotheses}\label{sec:eval:design}
 
 The evaluation is organised around five questions. For each, the design of
@@ -268,8 +345,7 @@ the cohort and is evaluated in Section~\ref{sec:eval:campaign}.
 \centering
 \caption[Release-acceptance arms]{Release-acceptance arms, switchable settings
 of the campaign code base. In every arm the controller's mass and inertia follow
-the estimate continuously. Arms A--C and the oracle differ only in when a
-release is accepted; arm~D, added after the cohort and the only rule of the
+the estimate continuously. Arms A--C differ only in when a release is accepted; arm~D, added after the cohort and the only rule of the
 deployed controller, differs also in its evidence.}
 \label{tab:arms}
 \small
@@ -280,7 +356,6 @@ deployed controller, differs also in its evidence.}
 B & Always-on confirmed & evidence score \eqref{eq:confirm} counted throughout loaded flight; the command does not accept the release \\
 A & Command-immediate & accepts the release at the command itself, with no confirmation \\
 C & Command-armed confirmed & the same confirmation, but persistence counted only after the command arrives \\
---- & Oracle & accepts at the true separation instant; an upper bound, not deployable, not run in the cohort \\
 \midrule
 D & Force-balance, dual-enabled & \eqref{eq:confirm} on $\gamma_{\mathrm{acc}}$, opened by the command or the loss watchdog; the deployed rule; release campaign only (Section~\ref{sec:eval:campaign}) \\
 \bottomrule
@@ -355,8 +430,8 @@ exactly the cases most worth reporting.
 Table~\ref{tab:evidence} lists every source of evidence used in this chapter.
 Only the first row supports the primary results of Section~\ref{sec:eval:results};
 the second, a frozen campaign of the same standing, is analysed on its own in
-Section~\ref{sec:eval:campaign} and never pooled with the first. The two smaller frozen batches
-each answer one question in one configuration; the horizontal-offset ablation
+Section~\ref{sec:eval:campaign} and never pooled with the first. The residual ablation
+answers one question in one configuration; the horizontal-offset ablation
 was run in an earlier, eccentric configuration; and development flights are
 cited only for mechanisms, never pooled with frozen results or used to estimate
 an effect size.
@@ -373,9 +448,9 @@ an effect size.
 Frozen cohort & 120 attempted, 118 eligible & evaluated configuration; arms A/B/C; d0 and d4; three conditions; primary results & \ref{sec:eval:results} \\
 Release campaign & 312 attempted, 312 eligible & evaluated configuration with the force-balance rule (arm D); four experiments, four conditions; analysed separately from the cohort & \ref{sec:eval:campaign} \\
 Residual ablation & 48 & arm~B, nominal release, residual on/off, three conditions & \ref{sec:eval:l1ablation} \\
-Inertia-treatment comparison & 16 (8 + 8) & \SI{0.30}{\kg} at \SI{4}{\meter\per\second}; release at \SI{45}{\second} rather than at the tip & \ref{sec:eval:amode} \\
+Estimator comparison & 96 (48 pairs) & arm~D, F against R, four conditions, d0 and d4 & \ref{sec:eval:reduced} \\
 Horizontal-offset ablation & 8 (4 + 4) & earlier eccentric configuration, \SI{0.15}{\kg} & \ref{sec:eval:eccablation} \\
-Development flights & single flights to batches of 8 & earlier configurations, changes confounded; mechanisms only & \ref{sec:eval:collapse}, \ref{sec:eval:amode} \\
+Development flights & single flights to batches of 8 & earlier configurations, changes confounded; mechanisms only & \ref{sec:eval:collapse} \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -1094,68 +1169,7 @@ against \SI{-0.8}{\percent}, \SI{-3.6}{\percent} against \SI{-3.1}{\percent},
 confirmation delays (all $p>0.45$) and the confirmations during carry, which
 occurred in both arms at c2. The residual compensates the \emph{consequence} of
 the mass bias for tracking; it does not reduce the bias, and it does not touch
-the lifecycle. This also qualifies the inertia-treatment result of
-Section~\ref{sec:eval:amode}, whose tracking endpoint was measured with the
-residual on in both arms.
-
-\subsection{The inertia treatment inside the estimator}\label{sec:eval:amode}
-
-Table~\ref{tab:amode} lists three treatments of the inertia increment inside the
-estimator. The lagged treatment was the full-state default of the campaigns; the evidence for that
-choice is a closed-loop comparison against the omitted treatment, reported below
-together with the configuration it was run in. The evidence against the live
-treatment is from single development flights.
-
-\emph{Live.} With the mass-dependent inertia in the estimator's rotational model,
-one \SI{4}{\meter\per\second} flight overestimated the loaded mass by
-\SIrange{28}{64}{\percent} relative to the force balance and diverged; with the
-airframe inertia additionally corrected to the simulator's value, one
-\SI{2}{\meter\per\second} flight overestimated it by \SI{29}{\percent} in the
-figure-eight and by \SI{39}{\percent} after release, so that confirmation never
-arrived. These two flights motivated the rejection of the live treatment and the
-argument of Section~\ref{sec:model:rotchannel}.
-
-\emph{Lagged against omitted.} Sixteen flights were run in alternating order,
-eight per treatment, at \SI{0.30}{\kg} on the $r=\SI{10}{\meter}$,
-$w=\SI{0.283}{\radian\per\second}$ figure-eight at a hover height of
-\SI{6}{\meter} (about \SI{4}{\meter\per\second} peak speed). The primary
-endpoint, fixed before the batch, was loaded figure-eight position error; the
-mass bias was secondary.
-\begin{itemize}
-\item All sixteen flights completed the release; there were no failures in either
-arm.
-\item Mean loaded figure-eight position error was \SI{0.113}{\meter} with the
-increment omitted and \SI{0.121}{\meter} with it lagged (Mann--Whitney
-$p=0.23$): no detectable difference on the primary endpoint, and not in the
-lagged treatment's favour.
-\item The online loaded figure-eight mass bias was \SI{-8.9}{\percent} omitted and
-\SI{-4.0}{\percent} lagged (Mann--Whitney $p=0.001$). The share of those samples
-resting on the lower mass bound was \SI{9.8}{\percent} and \SI{4.6}{\percent}
-($p=0.46$, not significant).
-\item Cross-replay removes the flight-to-flight variation: every one of the
-sixteen recorded flights was re-estimated offline under both treatments from the
-identical recorded inputs, and the lagged treatment had the smaller loaded
-figure-eight bias in all sixteen (Wilcoxon signed-rank $p=3\times10^{-5}$).
-Replay fidelity of the recorded estimator against its own logged output was of
-order $10^{-7}$.
-\end{itemize}
-The lagged treatment therefore halves the loaded mass bias in manoeuvre without
-changing tracking, and it was adopted as the default on that basis. It does not
-remove the bias.
-
-\paragraph{Configuration of this comparison.} Both arms ran in the evaluated
-configuration of Section~\ref{sec:eval:config} --- residual specific force,
-inertia floor held until the command, shortened arm, alignment relative to the
-parcel and smoothed yaw reference --- at \SI{0.30}{\kg} and
-\SI{4}{\meter\per\second}. It differs from the cohort only in the release
-timing: the command was issued \SI{45}{\second} into the loaded figure-eight
-rather than at the next tip. Two consequences should be kept in view. The result
-is a property of that configuration; with the earlier \SI{0.47}{\meter} arm the
-increment is three times larger and the comparison has not been run. And because
-both arms carried the residual $\hat{\bm d}$, which compensates the
-translational effect of a mass bias (Section~\ref{sec:model:residual}), the
-tracking endpoint is partly insensitive to the bias by construction; the null
-tracking result does not show that the bias is harmless.
+the lifecycle.
 
 \subsection{Full-state versus reduced estimator}\label{sec:eval:reduced}
 
@@ -1269,15 +1283,137 @@ and the acceptance criteria were fixed before the first flight: paired
 differences R$-$F with bootstrap confidence intervals of the median and Wilcoxon
 signed-rank tests, by payload, speed and detachment as well as overall.
 
-\draftnote{CLOSED-LOOP RESULTS PENDING (batch mhe\_variant\_ab\_20261105\_181925,
-started 18:34, 2026-11-05; interrupted after flight 32 of 96, about 20:26 the
-same day --- resume or rerun before analysis). Insert: results table (loaded/post mass MAE,
-convergence, tracking RMSE loaded/post, post-release peak, solve P50/P95, solver
-status, unhealthy time, saturation; R better/same/worse), binary outcomes per arm
-(divergence, early confirmation, missed, UNRESOLVED, model cleared, safe hover),
-by-group breakdown, the pre-registered acceptance verdict, and the deviation
-(entry default changed after flight 12; no effect on the arms, which set the
-variant explicitly).}
+\paragraph{Execution.} The batch was flown on 5 and 6 November 2026 from a
+recorded seed. Three deviations are recorded with it, none of which touches the
+comparison. After flight~12 the experiment entry points changed their default
+estimator; no flight reads that default, because every flight sets the variant
+explicitly, but the change altered the code fingerprint, so the batch stopped
+itself by design and was resumed under the new fingerprint. After flight~32, at a
+block boundary, the batch was paused, and it was resumed the next day with the
+fingerprint unchanged. All $96$ flights attached and were eligible, no
+infrastructure rerun was needed, and all $48$ pairs are complete.
+
+\paragraph{Binary outcomes.} Neither arm diverged, confirmed a release early,
+missed one or entered \textsc{unresolved}; every release was confirmed and the
+controller's model returned to the empty airframe afterwards, $48$ of $48$ in each
+arm. F ended $14$ solves at the iteration limit and re-initialised its window
+twice; R had no non-zero solver status. Under the nominal thrust map R's
+mass-health check never flagged an estimate. The controller held its model for
+\SI{8.7}{\second} with R and \SI{9.1}{\second} with F per flight at the median,
+almost all of it in the grasp gap of Section~\ref{sec:frame:gate}, and its model
+mass did not change during any hold.
+
+\begin{table}[ht]
+\centering
+\caption[Full-state against reduced estimator in closed loop]{Full-state (F)
+against reduced (R) estimator in closed loop, pre-registered metrics, all $48$
+pairs. Medians per arm; $\Delta$ is the median paired difference R$-$F with its
+bootstrap \SI{95}{\percent} confidence interval; $p$: Wilcoxon signed-rank;
+B/S/W: pairs in which R was better, the same or worse. Loaded window: from
+\SI{5}{\second} after lift-off to the command; post-release: from \SI{5}{\second}
+after detachment to the end of the flight.}
+\label{tab:fr-prereg}
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}l c c c c c c@{}}
+\toprule
+\textbf{Metric} & \textbf{F} & \textbf{R} & $\bm\Delta$ & \textbf{95\% CI} & $p$ & \textbf{B/S/W} \\
+\midrule
+Loaded mass MAE [kg]          & 0.0347 & 0.0132 & $-0.0187$ & $[-0.0275, -0.0115]$ & $<10^{-12}$ & 46/0/2 \\
+Post-release mass MAE [kg]    & 0.0298 & 0.0095 & $-0.0201$ & $[-0.0303, -0.0096]$ & $<10^{-12}$ & 48/0/0 \\
+Convergence after lift-off [s] & 4.21  & 4.17   & $-0.01$   & $[-0.06, +0.02]$     & 0.11  & 18/20/10 \\
+Loaded RMSE [m]               & 0.068  & 0.073  & $+0.000$  & $[-0.002, +0.004]$   & 0.29  & 20/6/22 \\
+Post-release RMSE [m]         & 0.069  & 0.064  & $+0.001$  & $[-0.004, +0.002]$   & 0.84  & 22/3/23 \\
+Post-release peak error [m]   & 0.148  & 0.138  & $-0.006$  & $[-0.011, -0.001]$   & 0.12  & 31/1/16 \\
+Confirmation after detachment [s] & 2.20 & 2.16 & $-0.00$  & $[-0.05, +0.01]$     & 0.29  & 18/19/11 \\
+MHE solve time P50 [ms]       & 2.76   & 0.31   & $-2.46$   & $[-2.63, -2.13]$     & $<10^{-12}$ & 48/0/0 \\
+MHE solve time P95 [ms]       & 4.89   & 0.35   & $-4.57$   & $[-6.22, -3.29]$     & $<10^{-12}$ & 48/0/0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:fr-prereg} gives the pre-registered continuous metrics. The mass
+advantage of R grows with speed: the loaded mass MAE fell from
+\SI{0.0179}{\kg} to \SI{0.0120}{\kg} at \SI{2}{\meter\per\second} (R better in
+$22$ of $24$ pairs) and from \SI{0.0535}{\kg} to \SI{0.0190}{\kg} at
+\SI{4}{\meter\per\second} ($24$ of $24$), and the post-release mass MAE from
+\SI{0.0167}{\kg} to \SI{0.0092}{\kg} and from \SI{0.0469}{\kg} to
+\SI{0.0136}{\kg}, R better in every pair at both speeds. The advantage held for
+both payloads and both detachment conditions. Tracking showed no consistent
+difference in any group: the confidence interval of the loaded RMSE difference
+contains zero in every group. The post-release peak error was smaller with R
+at \SI{2}{\meter\per\second} (by \SI{7}{\milli\meter}, $18$ of $24$ pairs,
+$p=0.016$) and with the heavier payload (by \SI{8.5}{\milli\meter}, $19$ of $24$,
+$p=0.011$), not overall.
+
+\paragraph{Acceptance.} All pre-registered acceptance criteria were met: no
+divergence with R; no sustained solver failure, and fewer non-zero solver
+statuses than F; no more early confirmations, missed releases or
+\textsc{unresolved} outcomes than F; a loaded mass MAE lower with a confidence
+interval below zero, $p<0.05$ and R better in at least two thirds of the pairs;
+no consistent worsening of loaded RMSE, post-release RMSE or post-release peak
+error; solve-time P50 and P95 lower with confidence intervals below zero; no
+iteration-limit runs and no re-initialisation under a \SI{-10}{\percent} thrust
+map (smoke test above); and no model update while the estimate was unhealthy.
+The last criterion, safe hover after every \textsc{unresolved}, was not exercised,
+because no flight entered that state.
+
+\paragraph{Exploratory metrics.} Table~\ref{tab:fr-explore} adds metrics that
+were \emph{not} pre-registered, computed on the windows of
+Section~\ref{sec:eval:metrics} so that they can be read against the cohort; they
+are reported as exploratory.
+
+\begin{table}[ht]
+\centering
+\caption[Full-state against reduced estimator: exploratory metrics]{Full-state
+(F) against reduced (R) estimator, exploratory metrics (not pre-registered), on
+the windows of Section~\ref{sec:eval:metrics}. Notation as in
+Table~\ref{tab:fr-prereg}; collapse fraction: share of loaded figure-eight samples
+with $\hat m_P$ below half the true payload; bound fraction: share of loaded
+samples within \SI{2}{\gram} of the estimator's lower mass bound; post-release:
+10--40\,s after detachment. Pairs: all $48$, or the $24$ at
+\SI{4}{\meter\per\second}.}
+\label{tab:fr-explore}
+\footnotesize
+\setlength{\tabcolsep}{2.5pt}
+\begin{tabular}{@{}l l c c c c@{}}
+\toprule
+\textbf{Metric} & \textbf{Pairs} & \textbf{F} & \textbf{R} & $\bm\Delta$ [95\% CI] & \textbf{B/S/W} \\
+\midrule
+Loaded-hover mass MAE [kg]        & all & 0.0055 & 0.0025 & $-0.0031$ $[-0.0037, -0.0026]$ & 48/0/0 \\
+Loaded figure-eight mass MAE [kg] & all & 0.0387 & 0.0141 & $-0.0209$ $[-0.0325, -0.0130]$ & 46/0/2 \\
+                                  & \SI{4}{\meter\per\second} & 0.0614 & 0.0210 & $-0.0444$ $[-0.0635, -0.0326]$ & 24/0/0 \\
+Collapse fraction                 & \SI{4}{\meter\per\second} & 0.220 & 0.000 & $-0.220$ $[-0.284, -0.024]$ & 24/0/0 \\
+Bound fraction                    & \SI{4}{\meter\per\second} & 0.0055 & 0.000 & $-0.0055$ $[-0.0083, -0.0021]$ & 17/7/0 \\
+Post-release mass MAE [kg] & all & 0.0308 & 0.0093 & $-0.0192$ $[-0.0308, -0.0099]$ & 48/0/0 \\
+MHE solve time P99 [ms]           & all & 6.40 & 0.38 & $-6.02$ $[-8.10, -4.30]$ & 48/0/0 \\
+MHE solve time maximum [ms]       & all & 9.41 & 0.44 & $-9.02$ $[-13.6, -6.0]$ & 48/0/0 \\
+NMPC solve time, median [ms]      & all & 1.75 & 1.70 & $+0.00$ $[+0.00, +0.00]$ & 14/21/13 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The collapse is the clearest difference. At \SI{4}{\meter\per\second} the
+full-state estimate spent a median \SI{22}{\percent} of the loaded figure-eight
+below half the true payload, and touched its lower bound; the reduced estimate
+did neither in any of the $24$ flights. This is the closed-loop counterpart of
+the argument of Section~\ref{sec:model:rotchannel}: the indirect path through the
+estimated attitude, which the reduced estimator does not have, is where the
+manoeuvre-induced bias came from. The mean vertical error in the figure-eight
+did not differ between the arms ($26$ of $48$ pairs smaller with R, $p=0.76$).
+
+\paragraph{What the comparison supports.} With the release rule, the controller,
+the residual specific force and the inertia floor held fixed, the reduced
+estimator identified the mass more accurately in hover, in manoeuvre and after
+release, removed the manoeuvre-induced collapse, solved more than an order of
+magnitude faster, and changed neither the safety of the lifecycle nor the
+confirmation delay. It did not improve tracking. That is consistent with
+Section~\ref{sec:eval:l1ablation}: the residual specific force already
+compensates the translational consequence of a mass bias, and the held inertia
+floor its rotational consequence during carry, so a more accurate mass has
+little left to correct in the loop. The comparison is therefore evidence for the
+reduced estimator as an estimator --- accuracy, health and computation --- not
+for a tracking benefit.
 
 \subsection{The horizontal-offset decision}\label{sec:eval:eccablation}
 
@@ -1306,21 +1442,6 @@ address offsets large enough to consume most of the torque authority; the
 present configuration avoids that regime by aligning before grasp. The frozen
 logs, configurations and scoring scripts are in
 \texttt{../data/ecc\_ablation\_20260924\_202511/}.
-
-\subsection{A negative result on learned stage weights}\label{sec:eval:weightlearning}
-
-The parameterised generalisation of the retired event-triggered schedule
-(Section~\ref{sec:frame:beta}) was optimised by cross-entropy search in the loop,
-on the earlier mass-only estimator, and the resulting schedule showed no
-measurable benefit over the hand-designed rule in a paired ablation. The
-objective was flat over a broad neighbourhood of that rule.
-
-This negative result is substantively useful, and is reported rather than
-omitted. What produced the benefit in the predecessor system was \emph{noticing
-that the model had changed and removing stale data}; the precise magnitude of the
-post-trigger weights is weakly determined by the data. A learned schedule should
-therefore not be presented as a superior learned controller. It is also part of
-the reason the mainline retired event logic altogether.
 
 \section{Failure Modes and Operating Limits}\label{sec:eval:limits}
 
@@ -1370,8 +1491,7 @@ These observations bound what the mass-only interface can claim. Its release
 confirmation is sound only while the mass estimate is: where the estimate collapses
 under manoeuvre, a confirmation rule that admits no other evidence will confirm a
 release that has not happened. The remedies available within the present
-architecture are the lagged inertia treatment of Section~\ref{sec:eval:amode},
-the full-state default of the campaigns, which halves the bias but does not remove it; the inertia-floor
+architecture are the inertia-floor
 hold and the residual specific force, both in the evaluated configuration, which
 address two of its consequences (loss of inner-loop authority and loss of thrust
 feed-forward) without touching its cause; and the command-armed arm~C, which removes the false confirmation
@@ -1447,18 +1567,11 @@ base}, in which the configuration is selected by switches. The \emph{mainline
 code base}, extracted from it on 5 November 2026, contains the deployed system
 only.
 
-In the campaign code base the mass-only configuration is selected by an
-environment switch whose default in both experiment entry points is the 14-state
-form, and the estimator reports at startup which lifecycle path is active. A
-second switch selects the estimator model; since 5 November 2026 both entry
-points default to the reduced estimator, which requires the mass-only form, and
-the estimator reports the selected model at startup. The cohort and the campaign
-predate that change and ran the full-state model. The estimator node's own
-library default is still the 16-state form with an augmented first moment, which
-this dissertation does not use: a node started directly, without an entry point,
-runs that form. Entry-point defaults and library defaults are therefore not
-interchangeable, and statements about campaign defaults in this dissertation
-refer to the entry points.
+In the campaign code base the estimator model and the evidence form are selected
+by environment switches whose library defaults differ from those of the
+experiment entry points, so a node started without an entry point does not run
+the evaluated configuration. The cohort and the campaign ran the full-state
+model; the cohort driver set the evaluated configuration explicitly (below).
 
 The mainline code base removes that hazard by removing the switches. Its
 estimator node implements the reduced estimator only. Its controller node has no
@@ -1475,8 +1588,7 @@ behaviour-affecting switch (Appendix~B).
 
 The cohort driver sets the five non-default settings of
 Section~\ref{sec:eval:config} explicitly for every flight, so the cohort does not
-depend on the entry-point defaults, which for those settings remain off; the
-lagged inertia treatment is an entry-point default. A flight launched from an
+depend on the entry-point defaults, which for those settings remain off. A flight launched from an
 entry point without the cohort driver therefore does \emph{not} run the
 evaluated configuration. The 14-state selection is both an entry-point default
 and set explicitly by the cohort driver, and each flight's record marks it as
@@ -1628,7 +1740,7 @@ failure. This is a regression check of the extraction, not an evaluation result.
 \section{Chapter Summary}\label{sec:eval:summary}
 
 This chapter addressed the fifth research objective with a frozen, randomised
-cohort of $120$ software-in-the-loop flights, two smaller frozen ablations and a
+cohort of $120$ software-in-the-loop flights, a smaller frozen ablation and a
 second frozen campaign of $312$ flights.
 The answers to the five questions are, in brief: the mass is accurate in loaded
 hover and collapses periodically in sustained manoeuvre at
@@ -1650,10 +1762,14 @@ controller in carry, while estimating the mass gave no consistent tracking
 benefit over the residual alone. All of these results were obtained with the
 full-state estimator. Its replacement by the reduced velocity--mass estimator is
 supported by a replay of the 312 campaign flights, in which the reduced estimate
-had the smaller loaded mass error in every nominal flight, and by a thrust-map
+had the smaller loaded mass error in every nominal flight, by a thrust-map
 smoke test in which its health check flagged the under-reading map and held the
-controller's model; the paired closed-loop comparison is reported in
-Section~\ref{sec:eval:reduced}. Beyond that replay and four smoke flights, no
+controller's model, and by a paired closed-loop comparison of $96$ flights in
+which it met every pre-registered acceptance criterion: the loaded mass error fell
+from \SI{0.035}{\kg} to \SI{0.013}{\kg}, the manoeuvre-induced collapse
+disappeared, the solve time fell from \SI{2.8}{\milli\second} to
+\SI{0.3}{\milli\second}, and neither tracking nor the lifecycle changed
+(Section~\ref{sec:eval:reduced}). Beyond that replay and four smoke flights, no
 estimator-side thrust-map, partial-loss or hardware result exists. Chapter~\ref{ch:conclusion}
 draws the conclusions these results support, and only those.
 

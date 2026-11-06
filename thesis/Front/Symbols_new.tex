@@ -39,17 +39,16 @@ $k_d$, $g$ & Linear drag coefficient, gravitational acceleration \\
 \multicolumn{2}{@{}l}{\textit{Estimator and controller}} \\
 $N,\Delta t$ & Horizon length and sampling interval \\
 $W_y,W_w,W_0$ & MHE measurement, process-noise and arrival weights \\
-$\beta_j$ & Per-stage weighting factor; $\lambda$ forgetting factor \\
+$\beta_j$ & Per-stage weighting factor \\
 $Q,R,P$ & NMPC stage-state, input and terminal weights \\
 $L_{(\cdot)}$ & Bryson tolerance scale for the corresponding residual \\
 $u_{\mathrm{hover}}$ & Parameter-dependent equilibrium input baseline \\
 $\hat{\bm d}$ & Residual specific force estimated by the controller ($\mathcal{L}_1$-type) \\
 \midrule
 \multicolumn{2}{@{}l}{\textit{Lifecycle}} \\
-$\gamma$ & No-payload evidence score, \eqref{eq:gamma} \\
+$\gamma$ & Mass-based no-payload evidence score, \eqref{eq:gamma}; logged only \\
 $m_{\mathrm{acc}}$, $f_z$ & Force-balance mass \eqref{eq:macc}; specific force along the thrust axis \\
 $\gamma_{\mathrm{acc}}$ & Force-balance evidence score, \eqref{eq:gammaacc}; the deployed release evidence \\
-$\gamma_{\mathrm e}$ & Evidence score tested by the confirmation rule \eqref{eq:confirm} \\
 $\sigma(v;a,b)$ & Cubic smooth-step indicator, \eqref{eq:smoothstep} \\
 $\varsigma$ & Body-rate command scale \\
 \bottomrule

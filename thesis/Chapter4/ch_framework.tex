@@ -6,13 +6,10 @@
 %% (formerly split between Chapter 3 and this chapter) are collected in
 %% Section 4.2, the reduced velocity--mass estimator is the deployed default, and
 %% the two optimal control problems are adjacent.  Labels are unchanged.
-%% 2026-11-06: aligned with the mainline code base (MHE_NMPC, commit 5b7881e).
-%% The deployed release rule is the dual-enabled force-balance rule (arm D); the
-%% mass-evidence rule and its two arming policies are described as the rule of
-%% the cohort.  The attach-time floor has one hand-over rule (hold until the
-%% release command or a detected uncommanded loss); the evidence hand-over, the
-%% lift-off-armed variant and trajectory-scaled weights are no longer in the
-%% controller.  No experimental number changed.
+%% 2026-11-06: describes the mainline system only (MHE_NMPC): the reduced
+%% velocity--mass estimator and the force-balance release rule (arm D).  The
+%% full-state estimator F and the mass-evidence lifecycle of the cohort moved to
+%% Chapter 5 (Section sec:model:mhe) with their equation labels.
 
 \chapter{The MHE--NMPC Framework}
 \label{ch:framework}
@@ -20,9 +17,9 @@
 \setlength{\parskip}{0.22in}
 
 Chapter~\ref{ch:model} established \emph{what} is estimated and why. This
-chapter states \emph{how}. Section~\ref{sec:frame:models} collects the models in
-one place --- the deployed velocity--mass estimator, the full-state estimator with
-which the evaluation campaigns were flown, and the controller's prediction model.
+chapter states \emph{how}. Section~\ref{sec:frame:models} states the two models
+side by side --- the velocity--mass estimator and the controller's prediction
+model.
 Sections~\ref{sec:frame:mhe} and \ref{sec:frame:nmpc} give the two optimal
 control problems built on them, Section~\ref{sec:frame:interface} the interface
 that carries the estimate from one to the other, Section~\ref{sec:frame:omegascale}
@@ -35,11 +32,10 @@ model parameters follow the estimate continuously, and a release is
 \emph{accepted} --- declared complete, with auxiliary states reset --- only on
 persistent evidence that the payload has left. In the deployed system that
 evidence is a force balance formed from rotor speeds and the inertial unit,
-independent of the mass estimate (Section~\ref{sec:frame:accdet}); the cohort of
-Chapter~\ref{ch:evaluation} used the estimator's own mass evidence.
+independent of the mass estimate (Section~\ref{sec:frame:accdet}).
 Section~\ref{sec:frame:why-eventless} separates what acceptance does from what
 the continuous adaptation does, and Section~\ref{sec:frame:limits-lifecycle}
-states why a lifecycle on the mass estimate alone was replaced.
+states the limits of the lifecycle.
 
 \section{Closed-Loop Architecture}\label{sec:frame:arch}
 
@@ -95,44 +91,35 @@ Chapter~\ref{ch:model} derived one plant model: the kinematics
 \eqref{eq:trans} and \eqref{eq:rot}, and the payload algebra that makes the
 inertia increment a function of the composite mass, \eqref{eq:dJofm}. The
 estimator and the controller each keep only the part of that model they need,
-and they keep different parts. This section states the models side by side, so
-that the optimisation problems of Sections~\ref{sec:frame:mhe} and
-\ref{sec:frame:nmpc} can refer to one place. Two estimator models are described:
-the \emph{reduced} velocity--mass estimator, which is the deployed default, and the
-\emph{full-state} estimator with which the evaluation campaigns of
-Chapter~\ref{ch:evaluation} were flown. They are selected by one switch and share
-every interface, so the rest of this chapter applies to both unless stated
-otherwise. Table~\ref{tab:models} summarises the three models.
+and they keep different parts. This section states the two models side by side,
+so that the optimisation problems of Sections~\ref{sec:frame:mhe} and
+\ref{sec:frame:nmpc} can refer to one place. Table~\ref{tab:models} summarises
+them.
 
 \begin{table}[ht]
 \centering
-\caption{The three models of one plant. R is the deployed estimator, F the
-full-state estimator used in the evaluation campaigns, and the right-hand column
-the controller's prediction model. Equation numbers refer to the definitions.}
+\caption{The two models of one plant: the estimator's and the controller's
+prediction model. Equation numbers refer to the definitions.}
 \label{tab:models}
 \footnotesize
-\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{0.17\textwidth} >{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}X@{}}
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{0.20\textwidth} >{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}X@{}}
 \toprule
- & \textbf{Reduced estimator R} (deployed) & \textbf{Full-state estimator F} (campaigns) & \textbf{NMPC prediction model} \\
+ & \textbf{Estimator} & \textbf{NMPC prediction model} \\
 \midrule
-State & $[\bm v;\,\mT]\in\mathbb R^{4}$ \eqref{eq:xred} & $[\bm p;\bm v;\bm q;\bm\omega;\mT]\in\mathbb R^{14}$ \eqref{eq:xaug} & $[\bm p;\bm v;\bm q;\bm\omega]\in\mathbb R^{13}$ \eqref{eq:state} \\
-Known inputs and parameters & measured attitude $\tilde{\bm q}$, $\Tphys$; $\mathbb R^{5}$ \eqref{eq:pred} & $\Tphys$, $\tauphys$, lagged $\dJ$, $\cvec=\bm 0$; $\mathbb R^{7}$ \eqref{eq:pmhe} & reference, $\mT$, $\dJ$, $\cvec=\bm 0$, $\hat{\bm d}$; $\mathbb R^{20}$ \eqref{eq:pnmpc} \\
-Dynamics & translational only, attitude supplied \eqref{eq:redmodel} & \eqref{eq:kin}, \eqref{eq:quat}, \eqref{eq:trans}, \eqref{eq:rot} with $\Jt(\dJ^{\mathrm{lag}})$ & \eqref{eq:predmodel} \\
-Where the payload enters & $1/\mT$ in $\dot{\bm v}$; $\mT$ a decision variable & $1/\mT$ in $\dot{\bm v}$ (decision variable); $\dJ$ a known parameter, \eqref{eq:Afrozen} & $1/\mT$ and $\dJ(\mT)$, runtime parameters \\
-Rotational dynamics & not integrated & integrated; $\partial\dot{\bm\omega}/\partial\mT=0$ \eqref{eq:nodwdm} & integrated with $\Jt(\dJ)$ \\
-Residual & velocity $\bm e^v\in\mathbb R^{3}$ \eqref{eq:redresid} & full state $\bm e\in\mathbb R^{13}$ \eqref{eq:mheresid} & tracking and input deviation \eqref{eq:nmpcresidual} \\
-Rate, horizon & \SI{10}{\hertz}, $N=20$, $\Delta t=\SI{0.1}{\second}$ & same & \SI{20}{\hertz}, $N=20$, $\Delta t=\SI{0.05}{\second}$ \\
+State & $[\bm v;\,\mT]\in\mathbb R^{4}$ \eqref{eq:xred} & $[\bm p;\bm v;\bm q;\bm\omega]\in\mathbb R^{13}$ \eqref{eq:state} \\
+Known inputs and parameters & measured attitude $\tilde{\bm q}$, $\Tphys$; $\mathbb R^{5}$ \eqref{eq:pred} & reference, $\mT$, $\dJ$, $\cvec=\bm 0$, $\hat{\bm d}$; $\mathbb R^{20}$ \eqref{eq:pnmpc} \\
+Dynamics & translational only, attitude supplied \eqref{eq:redmodel} & \eqref{eq:predmodel} \\
+Where the payload enters & $1/\mT$ in $\dot{\bm v}$; $\mT$ a decision variable & $1/\mT$ and $\dJ(\mT)$, runtime parameters \\
+Rotational dynamics & not integrated & integrated with $\Jt(\dJ)$ \\
+Residual & velocity $\bm e^v\in\mathbb R^{3}$ \eqref{eq:redresid} & tracking and input deviation \eqref{eq:nmpcresidual} \\
+Rate, horizon & \SI{10}{\hertz}, $N=20$, $\Delta t=\SI{0.1}{\second}$ & \SI{20}{\hertz}, $N=20$, $\Delta t=\SI{0.05}{\second}$ \\
 \bottomrule
 \end{tabularx}
-\\[4pt]
-\footnotesize The campaigns selected F with the switch
-\texttt{MHE\_MODEL\_VARIANT=full} of the campaign code base. The mainline code
-base contains R only; F, and the switch, remain in the campaign code base.
 \end{table}
 
-\subsection{The deployed estimator: velocity and mass}\label{sec:frame:redmodel}
+\subsection{The estimator: velocity and mass}\label{sec:frame:redmodel}
 
-The deployed estimator keeps the composite mass and the world-frame velocity, and
+The estimator keeps the composite mass and the world-frame velocity, and
 nothing else,
 \begin{equation}
 x_{\mathrm R} = \bigl[\,\bm v;\; \mT\,\bigr] \in \mathbb{R}^{4},
@@ -162,6 +149,15 @@ velocity block alone,
 \bm e^v_j = \bm y^v_j - \bm v_j \in \mathbb{R}^{3}.
 \label{eq:redresid}
 \end{equation}
+The mass is held constant across the window, so that a window of measurements
+constrains a single value rather than a free trajectory, and process noise is
+admitted on the velocity only; noise on the mass channel would let it drift
+within the window and dissolve the constraint that makes the estimate
+meaningful. The residual contains no acceleration: the trajectory is produced by
+integrating \eqref{eq:redmodel} forward under the known input, so the
+comparison is between velocities, never between a measured and a modelled
+acceleration. Differentiating the odometry velocity would amplify its noise by
+$1/\Delta t$, to the order of the very effect being estimated.
 
 Three properties of the attitude input are deliberate. First, every entry of
 \eqref{eq:Rq} is a quadratic form in $\bm q$, so
@@ -177,77 +173,21 @@ Why is this enough? The composite mass enters the plant at exactly one place, th
 gain $1/\mT$ of \eqref{eq:trans} (Section~\ref{sec:model:trans}). Position
 kinematics, attitude kinematics and Euler's equation contain no mass, so given
 the direction and the magnitude of the thrust, the velocity response carries all
-the information about $\mT$ that the window holds. What a full-state estimator
-adds is an \emph{estimated} attitude trajectory, and that is precisely the
-indirect path by which errors in the rotational model reached the mass
-(Section~\ref{sec:model:rotchannel}). Supplying the measured attitude closes that
-path by construction: no inertia, no torque, no vertical arm and no lagged
-increment enters the estimator at all. The price is that attitude measurement
-noise enters the thrust direction unfiltered. At the attitude noise assumed for
-the full-state estimator ($\sigma_q=0.01$, about \SI{1.1}{\degree}) it perturbs
+the information about $\mT$ that the window holds. What an estimator that
+integrates the full vehicle model adds is an \emph{estimated} attitude
+trajectory, and that is precisely the indirect path by which errors in the
+rotational model reach the mass (Section~\ref{sec:model:rotchannel}). Supplying
+the measured attitude closes that path by construction: no inertia, no torque and
+no vertical arm enters the estimator at all. The price is that attitude
+measurement noise enters the thrust direction unfiltered. At an attitude noise of
+$\sigma_q=0.01$ (about \SI{1.1}{\degree}) it perturbs
 the vertical thrust component by less than \SI{0.02}{\percent} and the horizontal
 components by up to \SI{2}{\percent} per sample, zero-mean, which the window
 averages. The simulator's odometry is close to ideal, so this argument is not
 tested by the experiments of Chapter~\ref{ch:evaluation}.
 
-The model has four states instead of fourteen and three noise channels instead of
-thirteen, so the quadratic subproblem is an order of magnitude smaller;
+With four states and three noise channels the quadratic subproblem is small;
 Section~\ref{sec:eval:reduced} reports the solve times.
-
-\subsection{The full-state estimator used in the evaluation campaigns}\label{sec:model:mhe}
-
-The cohort and the release campaign of Chapter~\ref{ch:evaluation} were flown
-with an estimator that integrates the complete vehicle model and augments the
-composite mass into its state,
-\begin{equation}
-x_{\mathrm{aug}} = \bigl[\,x;\; \mT\,\bigr] \in \mathbb{R}^{14},
-\qquad \dot{\mT} = 0,
-\label{eq:xaug}
-\end{equation}
-holding it constant across the horizon so that a window of measurements
-constrains a single value rather than a free trajectory. Process noise is
-admitted on the thirteen physical states only; noise on the mass channel would
-let it drift within the window and dissolve the constraint that makes the
-estimate meaningful. The reduced estimator applies the same rule to its own
-states.
-
-Its runtime parameter vector carries the reconstructed wrench of
-Section~\ref{sec:model:phys} and a three-element slot of known geometry,
-\begin{equation}
-p_{\mathrm{MHE}} = \bigl[\, \Tphys;\; \tauphys;\; \dJ^{\mathrm{est}};\; c^{\mathrm{est}}_x;\; c^{\mathrm{est}}_y \,\bigr] \in \mathbb{R}^{7},
-\label{eq:pmhe}
-\end{equation}
-which enters its rotational model as a fixed inertia increment and a fixed
-thrust-offset moment. In the evaluated configuration the first entry carries the
-lagged increment \eqref{eq:Afrozen} and the two offsets are zero; the omitted
-treatment sets all three to zero. In neither case is the slot a function of the
-decision variable, which is how \eqref{eq:nodwdm} is enforced.
-
-Its stage cost is built on one measurement residual. Writing $\bm y_i$ for the
-odometry measurement at stage $i$ of the window and $x_i$ for the physical part
-of the estimator's trajectory at that stage,
-\begin{equation}
-\bm e_i \;=\; \bm y_i - x_i
-\;=\; \bigl[\,\bm e^p_i;\ \bm e^v_i;\ \bm e^q_i;\ \bm e^{\omega}_i\,\bigr]
-\in \mathbb{R}^{13}.
-\label{eq:mheresid}
-\end{equation}
-The \emph{velocity residual} and the \emph{angular-rate residual} referred to
-throughout are the blocks $\bm e^v$ and $\bm e^{\omega}$ of this vector; the
-reduced estimator's residual \eqref{eq:redresid} is its velocity block alone.
-Neither residual contains an acceleration: the trajectory is produced by
-integrating the dynamics forward under the known input, so the comparison is
-between velocities, never between a measured and a modelled acceleration.
-Differentiating the odometry velocity would amplify its noise by $1/\Delta t$, to
-the order of the very effect being estimated.
-
-By \eqref{eq:nodwdm}, the full-state estimator also identifies the mass through
-the velocity residual. Its angular-rate residual constrains the attitude and rate
-trajectories, and reaches the mass through the estimated attitude, which sets the
-thrust direction in \eqref{eq:trans}; this is the path that the reduced
-estimator removes. The attitude block $\bm e^q$ of \eqref{eq:mheresid} is a
-component-wise quaternion difference; the reduced estimator has no attitude
-residual of any form.
 
 \subsection{The controller's prediction model}\label{sec:model:ctrl}
 
@@ -260,10 +200,9 @@ p_{\mathrm{NMPC}} = \bigl[\, x_{\mathrm{ref}}(13);\; \mT;\; \dJ;\; \cvec(2);\;
 where $\mT$ is the published mass estimate, $\dJ$ is \eqref{eq:dJofm} evaluated
 at it, the two horizontal-offset entries $\cvec$ are held at zero (assumption~2),
 and $\hat{\bm d}$ is the residual specific force of
-Section~\ref{sec:model:residual}. The offset entries remain because the same
-generated solver also served the eccentric-grasp configuration of
-Section~\ref{sec:eval:eccablation}; the deployed controller has no setting that
-fills them. The prediction model is the plant model of
+Section~\ref{sec:model:residual}. The offset entries are held at zero by the
+controller; the evidence that modelling the offset buys nothing at the operating
+condition is in Section~\ref{sec:eval:eccablation}. The prediction model is the plant model of
 Section~\ref{sec:model:dyn} with these parameters substituted,
 \begin{align}
 \dot{\bm p} &= \bm v, \qquad
@@ -280,18 +219,15 @@ Apart from the additive residual $\hat{\bm d}$, nothing in
 \eqref{eq:predmodel} is new: the pair $(\mT,\dJ)$ are the only payload quantities
 that change from one solve to the next, each enters at exactly one place, and
 the second is a function of the first. The controller is the only one of the
-three models that needs the inertia, and it obtains it from the estimate rather
+two models that needs the inertia, and it obtains it from the estimate rather
 than estimating it.
 
 The published mass is not the raw estimate. The estimator publishes
 $\mB+\mP^{\mathrm{out}}$, where $\mP^{\mathrm{out}}$ is the positive part
 \eqref{eq:mPplus} passed through a first-order filter, so the published mass
 never falls below $\mB$; the controller filters and rate-limits it again
-(Section~\ref{sec:frame:filter}). With the full-state estimator the two
-optimisers evaluate the inertia increment at different points --- the controller
-at the filtered, published estimate, the estimator at its own previous solution;
-the reduced estimator carries no inertia at all. In no case is the inertia a
-function of a decision variable. Neither estimator has a counterpart of
+(Section~\ref{sec:frame:filter}). The estimator carries no inertia, so the
+inertia is never a function of a decision variable, and it has no counterpart of
 $\hat{\bm d}$, so a persistent residual cannot be used there to explain away a
 mass change.
 
@@ -299,9 +235,8 @@ mass change.
 
 \subsection{The optimisation}\label{sec:frame:mheocp}
 
-Both estimator models of Section~\ref{sec:frame:models} are solved as the same
-constrained least-squares problem. At each \SI{10}{\hertz} tick the estimator
-solves
+The estimator is a constrained least-squares problem. At each \SI{10}{\hertz}
+tick it solves
 \begin{align}
 \min_{x_{0:N},\, w_{0:N-1}} \quad
 & \bigl\| x_0 - \bar{x}_0 \bigr\|^2_{W_0}
@@ -312,111 +247,63 @@ solves
 & \underline{m} \le \mT \le \overline{m},
 \label{eq:mhe}
 \end{align}
-where $F_{\mathrm{M}}$ is one explicit fourth-order Runge--Kutta step of the
-estimator model driven by its known inputs $p_j$, $y_j$ is the odometry
-measurement and $C$ selects the measured part of the state. For the reduced
-estimator, $x$ is \eqref{eq:xred}, $p_j$ is \eqref{eq:pred}, $C=[\,I_3\;\;
-\bm 0\,]$ selects the velocity and $F_{\mathrm{M}}$ integrates
-\eqref{eq:redmodel}; for the full-state estimator, $x$ is \eqref{eq:xaug}, $p_j$
-is the reconstructed wrench $u^{\mathrm{phys}}$ of \eqref{eq:phys} with the
-geometry slot of \eqref{eq:pmhe}, and $C$ selects the thirteen vehicle states. In
-both,
+where $x$ is \eqref{eq:xred}, $F_{\mathrm{M}}$ is one explicit fourth-order
+Runge--Kutta step of \eqref{eq:redmodel} driven by the known inputs $p_j$ of
+\eqref{eq:pred}, $y_j$ is the odometry measurement, $C=[\,I_3\;\;\bm 0\,]$
+selects the velocity, and
 \begin{equation}
-G = \begin{bmatrix} I_{n_w} \\ 0_{1\times n_w}\end{bmatrix},
-\qquad n_w = 3 \ \text{(reduced)},\quad n_w = 13 \ \text{(full state)},
+G = \begin{bmatrix} I_{3} \\ 0_{1\times 3}\end{bmatrix}
 \label{eq:Gmat}
 \end{equation}
-confines the process noise to the physical states, leaving $\mT$ noise-free
-within the window.
+confines the process noise to the velocity, leaving $\mT$ noise-free within the
+window.
 
-Measurements and inputs are aligned the same way in both models. Stage $j$
-pairs the measurement $y_j$ taken at the start of the interval with the input
-averaged over that interval; the newest measurement $y_N$ enters only as the
-terminal node of the trajectory and carries no cost.
+Stage $j$ pairs the measurement $y_j$ taken at the start of the interval with the
+input averaged over that interval; the newest measurement $y_N$ enters only as
+the terminal node of the trajectory and carries no cost.
 
 The horizon is $N=20$ stages at $\Delta t=\SI{0.1}{\second}$. The choice is a
 compromise: a longer window averages more measurement noise, but the constraint
 that makes the mass identifiable --- that it is \emph{constant} over the window
 --- becomes less defensible the longer the arc of trajectory the window spans. In
-development flights with the full-state estimator in an earlier configuration, on
-a \SI{4}{\meter\per\second} figure-eight a ten-stage window recovered the mass
-$3.7\times$ more accurately than a twenty-stage one, while a forty-stage window
-sat on the lower bound for the entire flight. The horizon was not varied in the
-evaluated configuration, and it is the same for the two estimators.
+development flights with an earlier estimator, on a \SI{4}{\meter\per\second}
+figure-eight a ten-stage window recovered the mass $3.7\times$ more accurately
+than a twenty-stage one, while a forty-stage window sat on the lower bound for
+the entire flight. The horizon was not varied in the reported experiments.
 
 \subsection{Weights}\label{sec:frame:weights}
 
 All weight matrices follow Bryson's rule, with each diagonal entry set by a
-representative residual magnitude. This keeps the residual blocks on comparable
-numerical scales.
-
-For the full-state estimator the measurement weight uses representative
-state-estimation standard deviations,
+representative residual magnitude:
 \begin{equation}
-W_y = \mathrm{diag}\Bigl(\sigma_p^{-2}I_3,\ \sigma_v^{-2}I_3,\ \sigma_q^{-2}I_4,\ \sigma_\omega^{-2}I_3\Bigr),
-\label{eq:Wy}
-\end{equation}
-with $\sigma_p=\SI{0.02}{\meter}$, $\sigma_v=\SI{0.05}{\meter\per\second}$,
-$\sigma_q=0.01$ (about \SI{1.1}{\degree}) and
-$\sigma_\omega=\SI{0.02}{\radian\per\second}$.
-
-The process-noise weight is deliberately \emph{tighter} than the measurement
-weight,
-\begin{equation}
-W_w = \mathrm{diag}\bigl(10^{4} I_6,\ 10^{5} I_4,\ 10^{3} I_3\bigr).
-\label{eq:Ww}
-\end{equation}
-The tight translational block forces persistent disagreement between measured
-motion and reconstructed thrust to be explained by the mass rather than by
-unstructured process noise. The angular block is one decade looser because the
-rotational equation is numerically more delicate and carries the modelling
-errors identified in Section~\ref{sec:model:rotchannel}.
-
-The arrival cost anchors the start of the window,
-\begin{equation}
-W_0 = \mathrm{diag}\bigl(10^{3} I_6,\ 10^{4} I_4,\ 10^{2} I_3,\ \sigma_{m,0}^{-2}\bigr),
+W_y = \sigma_v^{-2} I_3,
 \qquad
-\sigma_{m,0} = \SI{3.16}{\kg},
-\label{eq:W0}
-\end{equation}
-with $\bar x_0$ taken from the previous window shifted by one stage. The mass
-anchor is deliberately four to five orders of magnitude softer than the
-physical-state entries: it carries negligible prior information but remains
-non-zero so that a poorly excited window retains positive curvature in the mass
-direction. Setting it to zero produced 472 solver failures in an earlier
-configuration.
-
-The reduced estimator uses exactly the velocity and mass entries of these
-matrices,
-\begin{equation}
-W_y^{\mathrm R} = \sigma_v^{-2} I_3,
+W_w = 10^{4} I_3,
 \qquad
-W_w^{\mathrm R} = 10^{4} I_3,
-\qquad
-W_0^{\mathrm R} = \mathrm{diag}\bigl(10^{3} I_3,\ \sigma_{m,0}^{-2}\bigr),
+W_0 = \mathrm{diag}\bigl(10^{3} I_3,\ \sigma_{m,0}^{-2}\bigr),
 \label{eq:Wred}
 \end{equation}
-so the evidence on which the two estimators base the mass --- the velocity
-residual, the translational process noise and the arrival anchor --- is weighted
-identically, and the comparison of Section~\ref{sec:eval:reduced} isolates the
-model structure rather than a retuning.
+with $\sigma_v=\SI{0.05}{\meter\per\second}$ and $\sigma_{m,0} = \SI{3.16}{\kg}$.
+The process-noise weight is deliberately \emph{tighter} than the measurement
+weight: it forces persistent disagreement between measured motion and
+reconstructed thrust to be explained by the mass rather than by unstructured
+process noise. The arrival cost anchors the start of the window, with $\bar x_0$
+taken from the previous window shifted by one stage. Its mass entry is
+deliberately four orders of magnitude softer than the velocity entries: it
+carries negligible prior information but remains non-zero so that a poorly
+excited window retains positive curvature in the mass direction. Setting it to
+zero produced 472 solver failures in an earlier configuration.
 
 \subsection{Mass bounds and the mass-health check}\label{sec:frame:health}
 
-\paragraph{Full-state estimator.} The composite mass is constrained to
-$[\,0.95\,\mB,\ \SI{5.0}{\kg}\,]=[\SI{1.961}{\kg},\SI{5.0}{\kg}]$: the vehicle
-cannot weigh less than its airframe, while the \SI{5}{\percent} margin leaves
-room for calibration error. The estimator imposes this interval as a hard
-constraint. Under a thrust-map error that hard bound acts as a prior: a thrust
-map reading \SI{10}{\percent} low requires an empty-airframe estimate of
-$0.9\,\mB=\SI{1.858}{\kg}$, below the bound, and the estimate is held at the
-bound rather than revealing the error. A replay of the reduced model over the 312
-release-campaign flights with the same bound (Section~\ref{sec:eval:reduced})
-ended 107 solves at the iteration limit, all of them in the \SI{-10}{\percent}
-condition and at or near the bound.
+The estimator separates the numerical bound from the physical judgement. A hard
+physical bound would act as a prior under a thrust-map error: with a lower bound
+at $0.95\,\mB$, a map reading \SI{10}{\percent} low requires an empty-airframe
+estimate of $0.9\,\mB=\SI{1.858}{\kg}$, below the bound, and the estimate is
+held at the bound rather than revealing the error
+(Section~\ref{sec:eval:reduced}).
 
-\paragraph{Reduced estimator.} The reduced estimator separates the numerical bound
-from the physical judgement. Its box,
+\paragraph{Numerical box and health band.} The box,
 $[\,0.70\,\mB,\ \SI{5.0}{\kg}\,]=[\SI{1.445}{\kg},\SI{5.0}{\kg}]$, only prevents
 the $1/\mT$ singularity and run-away iterates and is wide enough for a thrust-map
 error of about \SI{30}{\percent} to appear in the estimate. Whether the estimate
@@ -433,8 +320,8 @@ possible thrust-map \emph{under}-estimate, one above it as out of envelope or a
 thrust-map \emph{over}-estimate; an estimate within \SI{2}{\gram} of the numerical
 box, or a non-finite one, is flagged as well. The flag takes effect on the first
 offending solve and is cleared only after ten consecutive solves inside the band
-(\SI{1}{\second}). The margins come from the replay: under the nominal thrust map
-the reduced estimate ranged over \SIrange{1.985}{2.368}{\kg} across 264 flights
+(\SI{1}{\second}). The margins come from a replay: under the nominal thrust map
+the estimate ranged over \SIrange{1.985}{2.368}{\kg} across 264 flights
 and never left \eqref{eq:healthband}. No simulator truth is used by the check.
 
 A flagged estimate is not forwarded. The frame is marked unhealthy, so the
@@ -449,12 +336,6 @@ map with the heavier payload ($\hat m\approx\SI{2.60}{\kg}$) are detected; a
 \SI{-10}{\percent} map with the heavier payload ($\hat m\approx\SI{2.13}{\kg}$)
 is not.
 
-\paragraph{Prior-free ablation.} A switch removes the remaining airframe-mass
-information from the full-state estimator by lowering the bound to
-\SI{0.2}{\kg} and setting $\sigma_{m,0}=\SI{1000}{\kg}$. It is an ablation, not
-the evaluated default; the measurement-derived seed below is prior-free in either
-configuration.
-
 \subsection{Input gating and the grasp gap}\label{sec:frame:gate}
 
 The reconstructed wrench is admitted as a known input only while the odometry
@@ -463,7 +344,7 @@ height exceeds \SI{0.5}{\meter} and the collective thrust exceeds
 $\mT g$. If any input is older than \SI{0.30}{\second} the window is discarded,
 the frame is marked unhealthy, and the window is rebuilt once fresh data return.
 The grasp hover at \SI{0.35}{\meter} lies below the gate. In each of the ten
-flights inspected, of both estimators, the window was therefore discarded during
+flights inspected the window was therefore discarded during
 the final descent, 1--3 seconds before the gripper registered the attach, and
 rebuilt about six seconds later, after lift-off had begun. The grasp itself is
 never inside a window: the loaded estimate starts afresh from the window-balance
@@ -520,25 +401,21 @@ of \eqref{eq:winbal} degenerates.
 The seed enters the solver in two places: the initial iterate of the sequential
 quadratic programme, and the mean of the arrival cost. The former affects only
 the number of iterations, never the optimum. The latter affects the optimum in
-proportion to its weight, which by \eqref{eq:W0} corresponds to a standard
+proportion to its weight, which by \eqref{eq:Wred} corresponds to a standard
 deviation of several kilograms --- far wider than the range of masses the
 vehicle can carry. The seed therefore influences where the optimiser starts, not
 where it converges. The same expression is used on re-initialisation after
 repeated solver failure (Section~\ref{sec:frame:reanchor}).
 
-\subsection{Stage weighting: what was tried and what is in effect}\label{sec:frame:beta}
+\subsection{Stage weighting}\label{sec:frame:beta}
 
 The constant-payload model is invalid when a grasp or release lies inside the
-window, so three alternatives to uniform weighting were implemented. Their role
-and disposition are summarised in Table~\ref{tab:stageweight}; the experimental
-negative result on learned weights belongs to
-Section~\ref{sec:eval:weightlearning}.
+window. Table~\ref{tab:stageweight} gives the stage weighting in effect.
 
 \begin{table}[ht]
 \centering
-\caption{Stage-weight alternatives considered for the MHE. They apply to both
-estimators; for the reduced estimator the de-weighting matrices are rebuilt on
-its own velocity, noise and arrival blocks.}
+\caption{Stage weighting of the MHE. The de-weighting matrices are built on the
+velocity, noise and arrival blocks of \eqref{eq:Wred}.}
 \label{tab:stageweight}
 \small
 \begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{0.28\textwidth} >{\raggedright\arraybackslash}p{0.18\textwidth} >{\raggedright\arraybackslash}X@{}}
@@ -547,8 +424,6 @@ Treatment & Status & Reason \\
 \midrule
 Uniform, $\beta_j\equiv1$ & in effect in almost every flight & no event logic; accepts a transient of roughly one window \\
 Residual-triggered de-weighting (pre-event stages $\times10^{-4}$ after a collective-thrust step above \SI{4.4}{\newton} for two frames) & enabled, rarely effective & collective-thrust steps also occur at trajectory changes; a grasp detection mostly falls inside the gap of Section~\ref{sec:frame:gate}, so the de-weighted stages have left the window before solving resumes \\
-Exponential forgetting, $\beta_j=\lambda^{N-1-j}$ & available, off ($\lambda=1$) & shortens effective memory smoothly but did not justify another tuning dimension \\
-Mass random walk & available, off & permits within-window change but degraded Hessian conditioning \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -556,9 +431,7 @@ Mass random walk & available, off & permits within-window change but degraded He
 The de-weighting row needs a number. Across the 312 flights of the release
 campaign the trigger fired in 81 flights, but the stage weights of a solved
 window were changed in only 10; in the others the detection fell inside the
-grasp gap or was overtaken by the window rebuild. The same default was active in
-the cohort, where its activations were not counted. The evaluated design
-therefore effectively tolerates the change transient rather than detecting it,
+grasp gap or was overtaken by the window rebuild. The design therefore effectively tolerates the change transient rather than detecting it,
 and the lifecycle below is designed around that delay.
 
 \subsection{Solver failure and re-initialisation}\label{sec:frame:reanchor}
@@ -572,11 +445,10 @@ the last accepted estimate matters because a run of failures is itself evidence
 that the last estimate may be corrupt; the window balance is the only mass value
 available at that instant that does not depend on the estimator's own history.
 
-The two estimators differ in one respect. The full-state estimator also adopts
-the seed as its current estimate. The reduced estimator uses the seed only as the
-arrival mean and initial iterate of the rebuilt window: the published estimate
-stays at the last successful solution and the frame stays unhealthy until a solve
-succeeds, because a seed is not a solution. The reduced estimator logs the solver
+The seed is used only as the arrival mean and initial iterate of the rebuilt
+window: the published estimate stays at the last successful solution and the
+frame stays unhealthy until a solve succeeds, because a seed is not a solution.
+The estimator logs the solver
 status, the number of SQP iterations and the running and cumulative failure
 counts of every failed solve.
 
@@ -671,32 +543,6 @@ Gauss--Newton Hessian was correspondingly ill-conditioned across directions, and
 the stationarity residual was observed to reach $6.26\times10^{5}$ --- a complete
 numerical breakdown rather than a slow convergence.
 
-\paragraph{Trajectory-scaled tolerances.} Two of the entries in \eqref{eq:Lstate}
-are defined by the comment that accompanies them as trajectory-dependent
-quantities: $L_v$ is a characteristic speed and $L_\omega$ a characteristic yaw
-rate. Written as constants they are correct only for the low-speed reference they
-were tuned on. An optional rescaling restores the intent,
-\begin{equation}
-L_v \leftarrow \max\bigl(L_v,\ r\,w\bigr),
-\qquad
-L_\omega \leftarrow \max\bigl(L_\omega,\ K_\psi\, w\bigr),
-\qquad K_\psi = 3.17,
-\label{eq:trajscale}
-\end{equation}
-taking the maximum so that the weights are only ever relaxed, never tightened.
-The constant $K_\psi$ is the ratio of peak yaw rate to angular rate on the
-figure-eight of Section~\ref{sec:frame:ref}, obtained numerically; it is worth
-noting that evaluating the yaw rate at the intuitive location $a=\pi/4$ gives
-$2.83$ and underestimates the peak by \SI{12}{\percent}, because the extremum
-does not occur there. Applying \eqref{eq:trajscale} at the low-speed condition
-reproduces $L_v$ exactly but relaxes $L_\omega$ by a factor of $3.2$, which
-exposes a pre-existing mismatch rather than introducing one: the original value
-was documented as matching a \emph{circular} trajectory, whose yaw rate is
-constant at $w$, while the vehicle actually flies a figure-eight whose peak is
-$3.17w$. The rescaling was off in every flight reported in this dissertation
-and is not part of the deployed controller; the constant tolerances of
-\eqref{eq:Lstate} are the ones in effect.
-
 \subsection{Residual specific force}\label{sec:model:residual}
 
 The translational model at the published mass is still wrong whenever the mass
@@ -731,22 +577,16 @@ controller only: it does not reach the estimator, the evidence scores
 to zero whenever the controller accepts a release --- a commanded release, or a
 load lost without a command and detected by the watchdog of
 Section~\ref{sec:frame:accdet} --- since a residual learned against the loaded
-vehicle becomes a phantom force once the payload has gone. (Under the always-on
-mass-evidence arm of the cohort, an acceptance could also occur with no command
-outstanding and no loss detected; it did not reset the residual, which was then
-unlearned by \eqref{eq:l1resid} itself, at the \SI{2}{\second} time constant of
-the low-pass filter.) And it is held at zero while the measured thrust is below
+vehicle becomes a phantom force once the payload has gone. And it is held at zero while the measured thrust is below
 $0.4\,\mB g$, because on the ground the support force would otherwise be learned
 as an upward disturbance. Its cost is equally plain: because it compensates the
 translational consequence of a mass bias, tracking results obtained with it do
 not measure the accuracy of $\hat m$, and the mass error is reported directly
-wherever it matters (Chapter~\ref{ch:evaluation}). For the same reason the
-$\mathcal{L}_1$ baseline, which uses the same law with a fixed nominal mass and
-no payload model, differs from the deployed controller in the payload model, not
-in the presence of disturbance estimation. Section~\ref{sec:eval:l1ablation}
-isolates its contribution. The $\mathcal{L}_1$ and fixed-parameter comparison
-controllers of Section~\ref{sec:eval:camp:ctrl} were flown from the campaign
-code base; the deployed controller contains neither.
+wherever it matters (Chapter~\ref{ch:evaluation}).
+Section~\ref{sec:eval:l1ablation} isolates its contribution, and
+Section~\ref{sec:eval:camp:ctrl} compares the controller with an
+$\mathcal{L}_1$-type controller that uses the same law with a fixed nominal mass
+and no payload model.
 
 \subsection{Input constraints and the actuator envelope}\label{sec:frame:inputs}
 
@@ -777,12 +617,12 @@ thrust is
 T \in \bigl[\,T(0.05),\; T(0.95)\,\bigr] = [\,\SI{1.27}{\newton},\; \SI{31.35}{\newton}\,],
 \label{eq:envelope}
 \end{equation}
-and this is the thrust box of \eqref{eq:nmpc}. A box derived from the vehicle's
-weight rather than its actuators, as used in an earlier implementation
-($[\SI{0.5}{\newton},\,2\mB g=\SI{40.5}{\newton}]$), over-states the available
-thrust by \SI{29}{\percent}; the surplus is removed silently by the clip in
-\eqref{eq:throttleinv}, so a planned recovery acceleration is never delivered
-and the next solve asks for still more.
+and this is the thrust box of \eqref{eq:nmpc}. The box must come from the
+actuators rather than from the vehicle's weight: a weight-based box such as
+$[\SI{0.5}{\newton},\,2\mB g=\SI{40.5}{\newton}]$ over-states the available
+thrust by \SI{29}{\percent}, the surplus is removed silently by the clip in
+\eqref{eq:throttleinv}, and a planned recovery acceleration is then never
+delivered while the next solve asks for still more.
 
 The torque bounds follow from the allocation. The ROS layer never evaluates the
 inverse of \eqref{eq:phys} --- the autopilot's mixer does --- but its form sizes
@@ -842,8 +682,7 @@ the controller, which holds $\cvec=\bm 0$.
 
 Health is a conjunction: the latest solve must have succeeded, the odometry,
 rotor-speed and known-input streams must all be fresher than
-\SI{0.30}{\second}, and --- for the reduced estimator --- the latest estimate
-must pass the mass-health check \eqref{eq:healthband}. The consumer applies one further test of its own, on the
+\SI{0.30}{\second}, and the latest estimate must pass the mass-health check \eqref{eq:healthband}. The consumer applies one further test of its own, on the
 receive age of the frame itself (\SI{0.35}{\second}), because a frame can be
 healthy at the moment it is produced and stale by the time it is used.
 
@@ -886,11 +725,10 @@ effective bandwidth by the same factor, and for heavy loads the resulting
 attitude oscillation grows until the torque saturates. At the nominal arm
 $\kappa$ is $2.34$ for the heavier payload, by \eqref{eq:numbers}; because it grows
 with $r_z^2$, the arm and the payload mass together define a feasibility
-boundary, characterised in Section~\ref{sec:eval:opslimit}. An earlier
-implementation applied $\kappa$ by rewriting the autopilot's rate-loop gains at
-attachment. The deployed implementation does not touch those parameters; it
-scales the body-rate \emph{command} instead, which keeps the adaptation inside
-the ROS layer and makes it continuous and reversible.
+boundary, characterised in Section~\ref{sec:eval:opslimit}. The controller does
+not modify the autopilot's rate-loop parameters; it scales the body-rate
+\emph{command} instead, which keeps the adaptation inside the ROS layer and makes
+it continuous and reversible.
 
 \subsection{From inertia ratio to a command scale}\label{sec:frame:scale}
 
@@ -978,12 +816,10 @@ release command, or by the acceptance of an uncommanded loss
 (Section~\ref{sec:frame:accdet}), and is then faded over \SI{0.5}{\second} to the
 estimate-derived increment. If the estimate becomes stale or unhealthy while the
 handover is in progress, the fade freezes at the last safe inertia rather than
-continuing toward zero. An earlier rule, which faded the floor out once the
-estimator reported persistent loaded evidence ($\dJ\ge\SI{0.010}{\kg\meter\squared}$
-with an evidence score well below the confirmation threshold, sustained for
-\SI{0.5}{\second}), was used in development and is not part of the deployed
-controller: after its handover the inertia follows the loaded estimate, which
-collapses in sustained manoeuvre (Section~\ref{sec:eval:collapse}).
+continuing toward zero. Loaded evidence is not allowed to end the floor because
+the inertia would then follow the loaded estimate, which can collapse in
+sustained manoeuvre (Section~\ref{sec:eval:collapse}) while the parcel is still
+attached.
 
 The hold rule is the one place where the release command touches the
 controller's payload model, and it should be stated exactly. The command ends an
@@ -993,10 +829,8 @@ the loaded value, and the release is still accepted only by
 \eqref{eq:confirm}. The command is waited for because, after a real release, the
 estimator can no longer produce the loaded evidence that would end the floor, and
 the floor would otherwise remain on an empty airframe indefinitely. A load lost
-without any command issues no command. In the cohort's configuration the floor
-therefore stayed on the empty airframe, which is why that scenario was not run
-there (Section~\ref{sec:eval:conditions}); in the deployed configuration the
-loss watchdog ends it, and the campaign measured that path
+without any command issues no command; the loss watchdog of
+Section~\ref{sec:frame:accdet} then ends the floor
 (Section~\ref{sec:eval:camp:loss}).
 
 Three properties keep this consistent with the rest of the design. It is
@@ -1011,9 +845,7 @@ enabled, whether or not the gripper actually catches the parcel. A missed grasp
 therefore leaves an empty airframe flying with the envelope inertia floor --- a
 $2.34$-fold inner-loop scale at the nominal arm --- until the release command.
 The loss watchdog cannot end it earlier, because the watchdog arms only on
-airborne loaded evidence, which a missed grasp never produces. A variant that
-armed the floor only once the vehicle had detectably lifted the load was tried in
-development and is not part of the deployed controller.
+airborne loaded evidence, which a missed grasp never produces.
 
 \section{The Grasp--Release Lifecycle}\label{sec:frame:lifecycle}
 
@@ -1047,18 +879,12 @@ the load may still be on the hook. Gating acceptance on measured evidence ---
 from ``the payload has left'', at the cost of a confirmation delay while the
 evidence accumulates.
 
-Two kinds of evidence were used in this work. The cohort of
-Chapter~\ref{ch:evaluation} gated acceptance on the estimator's mass evidence
-$\gamma$ (Section~\ref{sec:frame:gamma}), under two arming policies: the
-\emph{always-on} policy evaluated the rule throughout carry, the
-\emph{command-armed} policy started its persistence count only after the release
-command. The cohort showed that, on the mass evidence, only the latter is sound,
-and that neither detects a load lost without a command. The deployed rule,
-described in Section~\ref{sec:frame:accdet}, replaces the mass evidence with an
-independent force-balance test and enables it either by the command or by a
-watchdog armed on airborne load; it is the only rule in this dissertation that
-addresses uncommanded loss, and it is the only release rule in the deployed
-controller.
+The evidence is a force-balance test that does not pass through the mass
+estimate, enabled either by the command or by a watchdog armed on airborne load
+(Section~\ref{sec:frame:accdet}); the watchdog also lets it detect a load lost
+without a command. An earlier rule that gated acceptance on the estimator's own
+mass evidence is evaluated in Chapter~\ref{ch:evaluation}
+(Section~\ref{sec:model:mhe}).
 
 \subsection{Two state machines}\label{sec:frame:fsm}
 
@@ -1080,10 +906,7 @@ $\gamma_{\mathrm{acc}}\ge0.90$ held for \SI{1.0}{\second}
 (Section~\ref{sec:frame:accdet}). \textsc{unresolved} is a hold, not an
 acceptance: the vehicle brakes to hover and keeps waiting for evidence. The
 dashed path, acceptance without a command, is open only once the loss watchdog
-has armed on airborne load, and is classified as an uncommanded loss. In the
-cohort of Chapter~\ref{ch:evaluation} the same machine ran on the mass score
-$\gamma$, and the path without a command existed only under the always-on
-policy (arm~B), with no watchdog. In every state the mass and inertia increment
+has armed on airborne load, and is classified as an uncommanded loss. In every state the mass and inertia increment
 follow the estimate frame by frame; no transition sets them, except that an
 uncommanded loss zeroes the inertia increment once.}
 \label{fig:fsm}
@@ -1098,20 +921,15 @@ $\lVert\bm v_{xy}\rVert\le\SI{0.20}{\meter\per\second}$). The quiet-flight
 condition is there because the mass is least reliable in manoeuvre
 (Section~\ref{sec:frame:limits-lifecycle}). The thresholds differ by a factor of
 four-and-a-half on purpose: the estimate is naturally low while it converges
-after a grasp, and a single threshold would toggle at the start of every lift. In
-the deployed estimator presence is a diagnostic: it is logged with every
-transition and affects no published field. The full-state estimator of the
-campaigns additionally had a directional thrust residual as a fast entry path and
-a latch recording that the flight had entered \textsc{loaded}.
+after a grasp, and a single threshold would toggle at the start of every lift.
+Presence is a diagnostic: it is logged with every transition and affects no
+published field.
 
 \subsection{No-payload evidence score}\label{sec:frame:gamma}
 
-The estimator's evidence score is a function of the published mass alone. It was
-the release evidence of the cohort, in which every lifecycle decision of the
-controller, apart from whether a release command had been issued, was a function
-of the published frame \eqref{eq:frame}. In the deployed system the score is
-still published and logged but is not used to accept a release; its form is
-reused by the force-balance score of Section~\ref{sec:frame:accdet}. Let
+The frame carries an evidence score that is a function of the published mass
+alone. It is logged but not used to accept a release; its form is reused by the
+force-balance score of Section~\ref{sec:frame:accdet}. Let
 $\sigma(v;a,b)$ be the smooth indicator that is $1$
 for $|v|\le a$, $0$ for $|v|\ge b$, and in between
 \begin{equation}
@@ -1145,20 +963,18 @@ provide independent release evidence.
 \subsection{Confirmation, \textsc{unresolved}, and braking to hover}\label{sec:frame:unresolved}
 
 The controller accepts a release through exactly one route, a persistence test
-on an evidence score $\gamma_{\mathrm e}$:
+on the force-balance score $\gamma_{\mathrm{acc}}$ of \eqref{eq:gammaacc}:
 \begin{equation}
-\gamma_{\mathrm e} \ge 0.90 \quad\text{held for}\quad \SI{1.0}{\second}
-\quad\text{on fresh evidence.}
+\gamma_{\mathrm{acc}} \ge 0.90 \quad\text{held for}\quad \SI{1.0}{\second}
+\quad\text{on fresh evidence,}
 \label{eq:confirm}
 \end{equation}
-In the deployed system $\gamma_{\mathrm e}$ is the force-balance score
-$\gamma_{\mathrm{acc}}$ of \eqref{eq:gammaacc}, and fresh means that the
-rotor-speed and inertial signals are younger than \SI{0.2}{\second}; in the
-cohort it was the mass score $\gamma$ of \eqref{eq:gamma}, on healthy, fresh
-frames. The persistence must be contiguous in valid evidence time: stale
-evidence breaks the count rather than pausing it. There is no separate estimator
-declaration, and the release command does not enter either score; it only
-decides when the count of \eqref{eq:confirm} may start.
+where fresh means that the rotor-speed and inertial signals are younger than
+\SI{0.2}{\second}. The persistence must be contiguous in valid evidence time:
+stale evidence breaks the count rather than pausing it. There is no separate
+estimator declaration, and the release command does not enter the score; it only
+decides when the count of \eqref{eq:confirm} may start
+(Section~\ref{sec:frame:accdet}).
 
 If no confirmation arrives within \SI{12}{\second} of the release command, the
 controller enters \textsc{unresolved}. This state is what makes confirmation on
@@ -1199,16 +1015,11 @@ awaited. Attitude is blended over the same interval by the smooth-step of
 
 \subsection{Force-balance release evidence and the uncommanded-loss watchdog}\label{sec:frame:accdet}
 
-This is the release rule of the deployed controller, called arm~D in
-Section~\ref{sec:eval:campaign}. It was introduced because the failure of the
-always-on rule (Section~\ref{sec:frame:limits-lifecycle}) lies in its evidence,
-not its arming: the mass estimate of the full-state
-estimator, with which the rule was developed, is the one quantity that degrades in
-manoeuvre (Section~\ref{sec:eval:collapse}). The reduced estimator shrinks that
-bias (Section~\ref{sec:eval:reduced}) but does not turn the mass estimate into an
-independent second witness. A second test of the same question needs evidence that
-does not pass through the attitude, the velocity history or the rotational
-model. The vertical force balance in the body frame provides it. The specific
+This is the release rule of the controller, called arm~D in
+Chapter~\ref{ch:evaluation}. Release evidence should not pass through the mass
+estimate, the one quantity of the system that degrades in sustained manoeuvre
+(Section~\ref{sec:frame:limits-lifecycle}); it should not pass through the
+attitude, the velocity history or the rotational model either. The vertical force balance in the body frame provides it. The specific
 force measured by the inertial unit along the thrust axis, $f_z$, contains no
 gravity term, and with the rotor-drag term neglected it satisfies
 $f_z\approx T/m$. A mass can therefore be formed from two measured signals
@@ -1249,8 +1060,7 @@ What may consume the score is decided by \emph{dual enabling}. The score is
 computed throughout the flight, but a confirmation counts only when one of two
 conditions holds:
 \begin{enumerate}
-\item a release command is pending --- the command opens confirmation at once,
-as in the command-armed policy; or
+\item a release command is pending --- the command opens confirmation at once; or
 \item the \emph{uncommanded-loss watchdog} is armed. It arms after the lift has
 started, once fresh evidence of load, $\gamma_{\mathrm{acc}}<0.90-0.15=0.75$,
 has persisted for \SI{2.0}{\second}. Once armed it is not disarmed by a rising
@@ -1273,26 +1083,22 @@ afterwards the increment again follows the estimate, which by then reads the
 empty airframe. The controller issues no gripper command, because the gripper's
 state is unknown and it may be the gripper that failed.
 
-\subsection{What a mass-only lifecycle cannot do}\label{sec:frame:limits-lifecycle}
+\subsection{Limits of the lifecycle}\label{sec:frame:limits-lifecycle}
 
-A lifecycle that tests the mass score \eqref{eq:gamma}, as the cohort's did,
-inherits every failure of that estimate. In sustained manoeuvre a low bias can carry
-$\hat m_P$ below the \SI{0.024}{\kg} confirmation threshold while the payload
-is attached; no rule admitting only that estimate can distinguish the collapse
-from a real release. The collapse was observed with the full-state estimator; the
-reduced estimator's loaded bias in manoeuvre is smaller
-(Section~\ref{sec:eval:reduced}), but the argument does not depend on its
-size.
+The release evidence inherits the thrust map. A relative error in $k_f$ scales
+$m_{\mathrm{acc}}$ one-for-one, so a map that reads high makes the vehicle look
+loaded after a real release, and one that reads low can make a light payload look
+absent, so that the watchdog never arms (Section~\ref{sec:eval:camp:thrust}). The
+force balance also assumes $f_z\approx T/m$, neglecting the vertical rotor drag.
+And the attach-time floor is ended only by a command or a detected loss, so a
+missed grasp leaves it on the empty airframe until the command
+(Section~\ref{sec:frame:bootstrap}).
 
-The cohort's configuration held the inertia floor until the release command,
-protecting inner-loop authority but not the lifecycle. Command-arming separately
-prevents carry-phase acceptance by not evaluating the release rule before a
-command. The cohort supports that arming policy
-(Section~\ref{sec:eval:unsignaled}), but neither mitigation corrects the mass
-estimate itself. The deployed force-balance rule of
-Section~\ref{sec:frame:accdet} leaves the estimate as it is and stops asking it
-the release question; its own limitation is calibration rather than manoeuvre
-(Section~\ref{sec:eval:camp:thrust}).
+The mass estimate is deliberately not asked the release question. In sustained
+manoeuvre a low bias can carry $\hat m_P$ below the \SI{0.024}{\kg} threshold of
+\eqref{eq:gamma} while the payload is attached, and no rule admitting only that
+estimate can distinguish such a collapse from a real release
+(Sections~\ref{sec:eval:collapse} and~\ref{sec:eval:unsignaled}).
 
 \subsection{Threshold provenance}\label{sec:frame:thresholds}
 
@@ -1315,7 +1121,8 @@ below the smallest payload tested; persistence suppresses the post-grasp
 convergence transient \\
 presence exit & $\mP<\SI{0.02}{\kg}$, \SI{5}{\second}, quiet flight &
 slow backstop; hysteresis against the entry threshold \\
-no-payload evidence score & \eqref{eq:gamma}; $\gamma\ge0.90$ held \SI{1.0}{\second} & engineering choice \\
+mass evidence score & \eqref{eq:gamma}; logged, not used to release & engineering choice \\
+confirmation & $\gamma_{\mathrm{acc}}\ge0.90$ held \SI{1.0}{\second}, \eqref{eq:confirm} & engineering choice \\
 force-balance score & \eqref{eq:macc}--\eqref{eq:gammaacc}; low-pass \SI{0.5}{\second}/\SI{0.25}{\second}; fresh within \SI{0.2}{\second} & thresholds shared with \eqref{eq:gamma}; time constants an engineering choice, checked by offline replay of the earlier cohort and frozen before the campaign of Section~\ref{sec:eval:campaign} \\
 loss-watchdog arming & $\gamma_{\mathrm{acc}}<0.75$ for \SI{2.0}{\second}, after lift start & engineering choice; frozen before that campaign \\
 \textsc{unresolved} timeout / brake & \SI{12}{\second} / \SI{3}{\second} & engineering choice \\
@@ -1351,12 +1158,11 @@ At every control instant the implementation performs the following sequence.
 
 \begin{enumerate}
 \item Receive and frame-convert the latest odometry.
-\item Reconstruct the physical wrench from rotor speeds, \eqref{eq:phys},
+\item Reconstruct the collective thrust from rotor speeds, \eqref{eq:phys},
 averaging the \SI{250}{\hertz} samples over the estimation interval.
 \item Append the measurement and the reconstructed input to the \SI{10}{\hertz}
 window; re-seed by \eqref{eq:winbal} if the window must be rebuilt.
-\item Solve \eqref{eq:mhe} for $\mT$ (with the full-state estimator, also the
-vehicle trajectory); with the reduced estimator, apply the mass-health check
+\item Solve \eqref{eq:mhe} for $\mT$ and apply the mass-health check
 \eqref{eq:healthband}.
 \item Update the presence machine and the no-payload evidence score \eqref{eq:gamma}.
 \item Assemble and publish the atomic frame \eqref{eq:frame} with its health bit
@@ -1390,30 +1196,27 @@ command.
 
 This chapter addressed the third and fourth research objectives: turning the
 single-parameter model of Chapter~\ref{ch:model} into an estimator and a
-controller that run together, and defining the release lifecycle. The three
-models involved are collected in one section: the controller predicts with the
-full vehicle model and the estimate-derived inertia, while the deployed estimator
-keeps only the translational dynamics, with the measured attitude as a known
-input, so that no rotational model error can reach the mass. The estimator is a
-constrained moving-horizon problem whose only payload decision variable is the
-composite mass, initialised from a window force balance, driven by the measured
-thrust, and checked against a physical health band before its estimate is
-released. One atomic, health-gated frame carries the mass and the inertia
-increment derived from it to the controller, which updates its prediction model,
-its input baseline and its inner-loop command scaling continuously from that
-frame. Release acceptance is kept separate from that adaptation: it changes the
+controller that run together, and defining the release lifecycle. The two
+models are collected in one section: the controller predicts with the full
+vehicle model and the estimate-derived inertia, while the estimator keeps only
+the translational dynamics, with the measured attitude as a known input, so that
+no rotational model error can reach the mass. The estimator is a constrained
+moving-horizon problem whose only payload decision variable is the composite
+mass, initialised from a window force balance, driven by the measured thrust,
+and checked against a physical health band before its estimate is released. One
+atomic, health-gated frame carries the mass and the inertia increment derived
+from it to the controller, which updates its prediction model, its input
+baseline and its inner-loop command scaling continuously from that frame.
+Release acceptance is kept separate from that adaptation: it changes the
 lifecycle state, resets the residual force and declares completion, and it is
-gated on evidence. In the deployed system that evidence is a force balance of
-the measured thrust against the inertial specific force, which does not pass
-through the mass estimate; it is opened by the release command or by a watchdog
-armed on airborne load, so a load lost without a command is also detected. Two
-properties of the design are known before any experiment: the release evidence
-inherits any error of the thrust map, and the attach-time inertia floor protects
-the inner loop at the price of being released only by a command or a detected
-loss, not by evidence of load. Chapter~\ref{ch:evaluation} measures how the
-complete system behaves: the cohort with the mass-evidence lifecycle, including
-whether its always-on or command-armed policy should be used, and the release
-campaign with the deployed force-balance rule.
+gated on a force balance of the measured thrust against the inertial specific
+force, which does not pass through the mass estimate; it is opened by the
+release command or by a watchdog armed on airborne load, so a load lost without a
+command is also detected. Two properties of the design are known before any
+experiment: the release evidence inherits any error of the thrust map, and the
+attach-time inertia floor protects the inner loop at the price of being released
+only by a command or a detected loss, not by evidence of load.
+Chapter~\ref{ch:evaluation} measures how the complete system behaves.
 
 \end{spacing}
 \newpage

@@ -36,36 +36,32 @@ Terminal scaling & $20\times$ pos., $1\times$ vel., $2\times$ att., $0.2\times$ 
 \centering
 \caption{MHE configuration. The full-state estimator is the evaluated
 configuration of the cohort and the release campaign; the reduced estimator is
-the deployed estimator and the only one in the mainline code base; the prior-free column lists the
-values taken by the full-state ablation of Section~\ref{sec:frame:health}.}
+the deployed estimator and the only one in the mainline code base.}
 \small
-\begin{tabularx}{\textwidth}{@{}p{0.27\textwidth} X X p{0.17\textwidth}@{}}
+\begin{tabularx}{\textwidth}{@{}p{0.27\textwidth} X X@{}}
 \toprule
- & \textbf{Full-state (evaluated)} & \textbf{Reduced (deployed)} & \textbf{Prior-free ablation} \\
+ & \textbf{Full-state (evaluated)} & \textbf{Reduced (deployed)} \\
 \midrule
-Model selection$^{a}$ & \texttt{full} (campaign library default) & \texttt{reduced} (campaign entry-point default; only model in the mainline code base) & \texttt{full} \\
-State dimension & 14 ($x$, $\mT$) & 4 ($\bm v$, $\mT$) & 14 \\
-Process-noise dimension & 13 (physical states only) & 3 (velocity) & 13 \\
-Runtime parameter dimension & 7 (wrench; lagged $\dJ$; $c_x=c_y=0$) & 5 (measured unit quaternion; $\Tphys$) & 7 \\
-Measurement residual & 13 (\eqref{eq:mheresid}) & 3, velocity (\eqref{eq:redresid}) & 13 \\
-Weights & \eqref{eq:Wy}--\eqref{eq:W0} & \eqref{eq:Wred} (velocity and mass blocks of the former) & as full-state \\
-Estimation stages / interval & $N=20$ / \SI{0.1}{\second} & same & same \\
-Mass box$^{b}$ & $[0.95\,\mB,\ \SI{5.0}{\kg}]$ & $[0.70\,\mB,\ \SI{5.0}{\kg}]$ & $[\SI{0.2}{\kg},$ $\SI{5.0}{\kg}]$ \\
-Mass-health band & none & \eqref{eq:healthband}, $[\SI{1.964}{\kg},\SI{2.464}{\kg}]$; recover after 10 solves & none \\
-Mass arrival $\sigma$ & \SI{3.16}{\kg} & \SI{3.16}{\kg} & \SI{1000}{\kg} \\
-Initial iterate & window force balance \eqref{eq:winbal} & same & same \\
-Estimator inertia increment$^{c}$ & lagged, \eqref{eq:Afrozen} (campaign entry-point default; library default omitted) & none & lagged \\
-Mass-only selection$^{d}$ & on (campaign entry-point default; library default off) & required & same \\
-Stage weighting $\beta_j$ & residual-triggered de-weighting enabled, uniform in effect (Section~\ref{sec:frame:beta}) & same, rebuilt on the reduced blocks & same \\
-Solver failure & re-anchor after 5 consecutive failures; seed adopted as estimate & re-initialise after 5; last valid estimate held, frame unhealthy & as full-state \\
-Output filter & first order, $\tau=\SI{0.25}{\second}$ & same & same \\
-NLP / QP method & Full SQP / partial-condensing HPIPM & same & same \\
+Estimator & full-state F & reduced R (the only estimator of the mainline code base) \\
+State dimension & 14 ($x$, $\mT$) & 4 ($\bm v$, $\mT$) \\
+Process-noise dimension & 13 (physical states only) & 3 (velocity) \\
+Runtime parameter dimension & 7 (wrench; lagged $\dJ$; $c_x=c_y=0$) & 5 (measured unit quaternion; $\Tphys$) \\
+Measurement residual & 13 (\eqref{eq:mheresid}) & 3, velocity (\eqref{eq:redresid}) \\
+Weights & \eqref{eq:Wy}--\eqref{eq:W0} & \eqref{eq:Wred} (velocity and mass blocks of the former) \\
+Estimation stages / interval & $N=20$ / \SI{0.1}{\second} & same \\
+Mass box$^{b}$ & $[0.95\,\mB,\ \SI{5.0}{\kg}]$ & $[0.70\,\mB,\ \SI{5.0}{\kg}]$ \\
+Mass-health band & none & \eqref{eq:healthband}, $[\SI{1.964}{\kg},\SI{2.464}{\kg}]$; recover after 10 solves \\
+Mass arrival $\sigma$ & \SI{3.16}{\kg} & \SI{3.16}{\kg} \\
+Initial iterate & window force balance \eqref{eq:winbal} & same \\
+Estimator inertia increment & lagged, \eqref{eq:Afrozen} & none \\
+Stage weighting $\beta_j$ & residual-triggered de-weighting enabled, uniform in effect (Section~\ref{sec:frame:beta}) & same, rebuilt on the reduced blocks \\
+Solver failure & re-anchor after 5 consecutive failures; seed adopted as estimate & re-initialise after 5; last valid estimate held, frame unhealthy \\
+Output filter & first order, $\tau=\SI{0.25}{\second}$ & same \\
+NLP / QP method & Full SQP / partial-condensing HPIPM & same \\
 \bottomrule
 \end{tabularx}
 \\[3pt]
-{\footnotesize Switches of the campaign code base: $^{a}$\,\texttt{MHE\_MODEL\_VARIANT};
-$^{b}$\,reduced: \texttt{MHE\_REDUCED\_M\_MIN}, \texttt{MHE\_REDUCED\_M\_MAX};
-$^{c}$\,\texttt{MHE\_DJ\_EXT=1}; $^{d}$\,\texttt{MHE\_ESTIMATE\_MOMENT=0}. Of these, only $^{b}$ exists in the mainline code base.}
+{\footnotesize $^{b}$\,Reduced: adjustable by \texttt{MHE\_REDUCED\_M\_MIN} and \texttt{MHE\_REDUCED\_M\_MAX}.}
 \end{table}
 
 \begin{table}[ht]

@@ -20,9 +20,11 @@ only payload quantity to be identified online. A moving horizon estimator
 identifies it from odometry and the thrust reconstructed from measured rotor
 speeds. In its deployed form it keeps only velocity and mass as states and takes
 the measured attitude as a known input, so that the less reliable rotational
-model has no path to the mass.
-\draftnote{Abstract: add one sentence on the reduced-versus-full-state replay and
-closed-loop comparison once the closed-loop result is in.} One
+model has no path to the mass. In a paired closed-loop comparison of $96$
+flights against a full-state estimator, this form lowered the loaded mass error
+from \SI{0.035}{\kg} to \SI{0.013}{\kg}, removed the collapse of the estimate in
+manoeuvre and solved about ten times faster, without changing tracking or release
+safety. One
 health-gated estimate updates a nonlinear model predictive controller
 continuously; a separate lifecycle accepts a release only when evidence
 confirms that the payload has left --- in the deployed form, a force balance of

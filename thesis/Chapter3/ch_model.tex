@@ -1,10 +1,10 @@
 %=== CHAPTER THREE ===
 %% Kinematics, dynamics, and the parameter structure of the payload-adaptive
-%% model.  2026-11-05: the deployed estimator is the reduced velocity--mass MHE;
-%% the 14-state full-state estimator is retained as the configuration of the
-%% evaluation campaigns.  The estimator formulation (eq:xaug, eq:pmhe,
-%% eq:mheresid) and the controller's model (eq:pnmpc, eq:predmodel) moved to
-%% Chapter 4, Section 4.2, with their labels.
+%% model.  2026-11-06: describes the mainline estimator only (reduced
+%% velocity--mass MHE).  The full-state estimator of the earlier campaigns
+%% (eq:xaug, eq:pmhe, eq:mheresid, eq:nodwdm, eq:Afrozen) is defined in
+%% Chapter 5, Section sec:model:mhe.  The controller's model (eq:pnmpc,
+%% eq:predmodel) is in Chapter 4, Section 4.2.
 %% Restructured 2026-11-03 into six sections.  Implementation detail that used
 %% to live here (initialisation, the NMPC problem and its input baseline, the
 %% actuator envelope and allocation, the residual specific force, inner-loop
@@ -12,8 +12,6 @@
 %% (sec:model:seed, eq:nmpc, eq:hover, eq:envelope, sec:model:residual, ...),
 %% so cross-references resolve unchanged.  Experimental numbers live in
 %% Chapter 5.  The pre-restructure source is in git history.
-%% 2026-11-06: implementation notes aligned with the mainline code base, which
-%% contains only the reduced estimator.
 
 \chapter{Modeling and Parameter Structure}
 \label{ch:model}
@@ -151,12 +149,10 @@ Hamilton product of the attitude with the pure quaternion of the body rate,
 The body rate enters on the \emph{right} of the product because it is resolved
 in the body frame; a world-frame rate would enter on the left. The
 implementation uses the matrix form, which is linear in $\bm\omega$.
-One property of $\Xi$ matters for estimation: $\bm{q}^{\!\top}\Xi(\bm{q})=\bm 0^{\!\top}$
+One property of $\Xi$ matters for prediction: $\bm{q}^{\!\top}\Xi(\bm{q})=\bm 0^{\!\top}$
 for every quaternion, so $\bm q^{\!\top}\dot{\bm q}=0$ and the kinematics
-preserve $\lVert\bm q\rVert$ exactly. The estimator integrates \eqref{eq:quat}
-across a whole window before comparing it with measurements, and any drift of the
-norm would appear as an attitude residual that the optimiser could attribute to
-the payload parameter.
+preserve $\lVert\bm q\rVert$ exactly; the controller integrates \eqref{eq:quat}
+across its horizon without renormalising.
 
 Neither \eqref{eq:kin} nor \eqref{eq:quat} contains a mass, an inertia, or any
 other physical parameter. \emph{The payload therefore enters the model only
@@ -363,88 +359,32 @@ moment that \eqref{eq:rot} does not contain; and the reconstructed torque of an
 unloaded vehicle carries a small constant bias
 (Section~\ref{sec:model:approx}). None prevents the vehicle from flying, but an
 optimiser that is allowed to move $\mT$ inside the rotational model will use the
-mass to absorb all three. Development flights with that freedom produced large
-mass overestimates, reported in Section~\ref{sec:eval:amode}.
+mass to absorb all three. In development flights with that freedom the estimator
+overestimated the loaded mass by \SIrange{28}{64}{\percent} at
+\SI{4}{\meter\per\second} and the flight diverged; with the airframe inertia
+corrected to the simulator's value it still overestimated the mass by
+\SI{29}{\percent} in the figure-eight and by \SI{39}{\percent} after release, so
+that the release was never confirmed.
 
-The deployed estimator therefore does not integrate the rotational dynamics at
+The estimator therefore does not integrate the rotational dynamics at
 all. It keeps the translational dynamics \eqref{eq:trans}, supplies the measured
 attitude as a known input instead of estimating it, and holds the composite mass
 and the velocity as its only states (Section~\ref{sec:frame:redmodel}). The mass
 then enters the estimator's model only where the model --- a thrust, a mass and
 gravity --- is trustworthy, and no inertia, torque or arm enters it.
 
-The evaluation campaigns of Chapter~\ref{ch:evaluation} were flown with an
-earlier, full-state estimator that does integrate \eqref{eq:quat} and
-\eqref{eq:rot} (Section~\ref{sec:model:mhe}). It approaches the same separation
-from the other side, by removing the direct sensitivity of the rotational
-dynamics to the mass decision variable,
-\begin{equation}
-\frac{\partial \dot{\bm\omega}}{\partial \mT}\bigg|_{\text{estimator}} = 0 .
-\label{eq:nodwdm}
-\end{equation}
-It does not, however, leave the payload inertia out of its rotational model: an
-estimator that integrates the bare-airframe inertia sees a heavy, low-hanging
-load as an unexplained angular response. The increment is instead inserted as a
-\emph{known parameter} computed from the previous solution $\hat m^{-}$ and held
-constant within the window,
-\begin{equation}
-\dJ^{\mathrm{lag}} = \frac{\mB\,\bigl(\hat m^{-}-\mB\bigr)^{+}}{\hat m^{-}}\; r_z^2,
-\qquad
-\frac{\partial \dJ^{\mathrm{lag}}}{\partial \mT}\bigg|_{\text{window}} = 0,
-\label{eq:Afrozen}
-\end{equation}
-refreshed between solves at the \SI{10}{\hertz} window rate. In the
-implementation the positive part in \eqref{eq:Afrozen} is smoothed over a width
-of \SI{0.02}{\kg}, which near $\hat m^{-}=\mB$ changes the increment by less
-than the airframe calibration error. Table~\ref{tab:amode} places this
-\emph{lagged} treatment between the two alternatives, and adds the deployed
-reduced estimator as a fourth row.
-
-\begin{table}[ht]
-\centering
-\caption{Treatments of the rotational channel inside the estimator. The
-controller always uses \eqref{eq:dJofm} evaluated at the published estimate;
-only the estimator's own model differs between rows. The first three rows are
-treatments within the full-state estimator.}
-\label{tab:amode}
-\small
-\begin{tabular}{@{}llll@{}}
-\toprule
-Treatment & $\dJ$ inside the estimator & $\partial\dot{\bm\omega}/\partial \mT$ & Status \\
-\midrule
-omitted & $0$ & zero & not used \\
-lagged & \eqref{eq:dJofm} at the previous solution $\hat m^{-}$ & zero & campaigns \\
-live & \eqref{eq:dJofm} at the decision variable $\mT$ & non-zero & rejected \\
-\midrule
-not integrated (reduced) & none; attitude measured & --- & deployed \\
-\bottomrule
-\end{tabular}
-\par\vspace{4pt}
-\footnotesize The corresponding implementation settings are listed in Appendix~A.
-The first three rows exist only in the campaign code base, where the lagged
-treatment was the full-state default of the experiment entry points; the
-mainline code base contains only the reduced estimator.
-\end{table}
-
-The omitted treatment satisfies \eqref{eq:nodwdm} with the wrong inertia; the
-live treatment has the right inertia but gives the optimiser the mass as a
-rotational knob. The lagged treatment keeps both properties: within a solve the
-increment is a constant, and from one solve to the next it follows the mass.
-Section~\ref{sec:eval:amode} compares the omitted and lagged treatments in
-closed loop.
-
-Equation~\eqref{eq:nodwdm} removes the \emph{direct} sensitivity only, and it
-should not be read as saying that the rotational channel has no influence on a
-full-state estimate. Two indirect couplings remain. Within a window, the
-angular-rate residual shapes the estimated attitude trajectory, and the attitude
-sets the direction of the thrust in \eqref{eq:trans}; an error in the rotational
-model therefore reaches the mass through the attitude. Between windows,
-\eqref{eq:Afrozen} feeds the previous mass back into the rotational model, so a
-biased estimate changes the inertia used in the next window. The lagged
-treatment does not remove these paths. The reduced estimator removes both: it
-has no estimated attitude through which an error could pass, and no inertia into
-which a previous mass could be fed back. Section~\ref{sec:eval:reduced} compares
-the two estimators in replay and in closed loop.
+Removing only the \emph{direct} sensitivity of the rotational dynamics to the
+mass would not be enough. An estimator that integrates the rotational dynamics
+keeps two indirect couplings. Within a window, the angular-rate residual shapes
+the estimated attitude, and the attitude sets the direction of the thrust in
+\eqref{eq:trans}, so an error in the rotational model reaches the mass through
+the attitude. And any payload inertia it carries in its rotational model must
+come from a mass estimate, so a biased estimate changes the next window's
+rotational model. The estimator of this work has neither path: it has no
+estimated attitude through which an error could pass, and no inertia into which a
+mass could be fed back. Section~\ref{sec:eval:reduced} compares it with a
+full-state estimator that removed only the direct path
+(Section~\ref{sec:model:mhe}).
 
 \subsection{What is estimated, what is derived, and what is fixed}\label{sec:model:whynot}
 
@@ -465,7 +405,7 @@ Symbol & Meaning & Dim. & Identity & Value / enters \\
 \midrule
 $\mT$ & composite mass & 1 & \textbf{MHE decision variable} & \eqref{eq:trans} \\
 \midrule
-$\dJ$ & roll/pitch inertia increment & 1 & derived, \eqref{eq:dJofm}; absent from the deployed estimator, lagged in the full-state one & \eqref{eq:predmodel}, \eqref{eq:Afrozen} \\
+$\dJ$ & roll/pitch inertia increment & 1 & derived, \eqref{eq:dJofm}; absent from the estimator & \eqref{eq:predmodel} \\
 $\mP$ & payload mass & 1 & derived, $(\mT-\mB)^{+}$ & \eqref{eq:dJofm} \\
 \midrule
 $r_z$ & payload vertical arm & 1 & nominal gripper geometry & \SI{-0.27}{\meter} \\
@@ -505,14 +445,10 @@ release.
 \paragraph{Why is a nominal $r_z$ acceptable?} Because the arm is a property of
 the gripper, fixed by its design, and not information about the parcel. It is a
 geometric prior, and the method does use it: it enters the inertia increment
-\eqref{eq:dJofm} of both optimisers, where its error propagates quadratically ---
+\eqref{eq:dJofm} of the controller, where its error propagates quadratically ---
 a \SI{10}{\percent} error in $r_z$ is a \SI{21}{\percent} error in $\dJ$, which
 mis-sizes the predicted attitude response and the inner-loop ratio $\kappa$. It
-does not enter the deployed estimator at all. In the full-state estimator it
-cannot enter the mass estimate through a derivative, because of
-\eqref{eq:nodwdm}, but it can through the indirect paths of
-Section~\ref{sec:model:rotchannel}; the size of that effect has not been
-measured. The difference between the nominal and the realised arm is quantified
+does not enter the estimator at all. The difference between the nominal and the realised arm is quantified
 in Section~\ref{sec:model:approx}.
 
 \paragraph{The information boundary.} The precise claim of this dissertation is
@@ -564,10 +500,9 @@ thrust and opposed to the rotor's own spin.
 returns the wrench the \emph{actuators generate}. It excludes $\Jt\dot{\bm\omega}$
 and rotor gyroscopic terms, which is what makes it usable as the known input
 $u^{\mathrm{phys}}$ of the estimator rather than as a second, competing estimate
-of the state. The deployed estimator uses only its first row, $\Tphys$; the
-full-state estimator uses all four. Rotor speeds are sampled at \SI{250}{\hertz} and averaged over each
-\SI{10}{\hertz} estimation interval, consistent with a zero-order-hold
-discretisation of \eqref{eq:trans} and \eqref{eq:rot}.
+of the state. The estimator uses only its first row, $\Tphys$. Rotor speeds are
+sampled at \SI{250}{\hertz} and averaged over each \SI{10}{\hertz} estimation
+interval, consistent with a zero-order-hold discretisation of \eqref{eq:trans}.
 
 \paragraph{Why the commanded input cannot be used.} Let the controller compute
 its thrust command from an assumed mass $\tilde{m}$, so that in hover
@@ -602,16 +537,15 @@ stage ahead, starting at its second node. The roll and pitch rate setpoints are
 then scaled for the payload inertia (Section~\ref{sec:frame:omegascale}). The
 autopilot's rate loop and mixer turn this setpoint into rotor commands.
 \item The \emph{physical torque} $\tauphys$ is what the rotors actually
-produced, reconstructed from measured rotor speeds by \eqref{eq:phys}. It is the
-only torque the full-state estimator sees; the deployed estimator sees no torque
-at all.
+produced, reconstructed from measured rotor speeds by \eqref{eq:phys}. No
+optimiser uses it; it is logged as a diagnostic.
 \end{enumerate}
 The division is deliberate: the rate loop runs at a bandwidth the
 \SI{20}{\hertz} solver cannot match, and leaving allocation on the autopilot
-keeps saturation handling next to the hardware. It is also why the estimator
-evaluates $M$ in the \emph{forward} direction from measured rotor speeds rather
-than reading $\bm\tau$ off the solver: $M$ applied to what the motors did is a
-measurement, whereas $\bm\tau$ from the solver is an intention. The ROS layer
+keeps saturation handling next to the hardware. It is also why the estimator's
+thrust is evaluated in the \emph{forward} direction from measured rotor speeds
+rather than read off the solver: $M$ applied to what the motors did is a
+measurement, whereas the solver's input is an intention. The ROS layer
 never evaluates the inverse allocation; its role in sizing the controller's
 input bounds is discussed with the actuator envelope in
 Section~\ref{sec:frame:inputs}.
@@ -652,9 +586,7 @@ and how the loop closes.
 \node[nd,text width=62mm] (res) at (6.6,-2.1)
   {model \eqref{eq:redmodel} with measured attitude $\tilde{\bm q}$;\ residual $\bm e^v_i=\bm y^v_i-\bm v_i\in\mathbb{R}^{3}$ \eqref{eq:redresid}};
 \node[nd]  (vres) at (4.8,-3.35) {velocity residual\\ $\bm e^v_i$};
-\node[gh]  (wres) at (8.4,-3.35) {full-state variant:\\ $\bm e_i\in\mathbb{R}^{13}$ \eqref{eq:mheresid}};
 \node[key] (mT)   at (4.8,-4.5)  {$\mT$};
-\node[gh,text width=24mm] (wonly) at (8.4,-4.5) {campaigns only;\\ $\partial\dot{\bm\omega}/\partial\mT=0$ \eqref{eq:nodwdm}};
 \node[gh]  (seed) at (1.5,-4.5)  {seed\\ \eqref{eq:winbal}};
 \node[gh,text width=26mm]  (prior)at (12.7,-3.9) {fixed inputs\\ $r_z$ nominal\\ $\mB,\Jb$ calibrated};
 \draw[ar] (wr.south) -- (res.north -| wr.south);
@@ -662,12 +594,10 @@ and how the loop closes.
 \draw[ar] (odo.south) -- ++(0,-1.05) -| (res.north -| 8.6,0);
 \node[lb,anchor=west] at (10.75,-0.95) {$\bm y_i$ (measured)};
 \draw[ar] (res.south -| vres.north) -- (vres.north);
-\draw[ar] (res.south -| wres.north) -- (wres.north);
 \draw[ar] (vres) -- (mT);
-\draw[dar] (wres) -- (wonly);
 \draw[dar] (seed) -- node[lb,above]{initial\\ iterate only} (mT);
 \begin{scope}[on background layer]
-  \node[lane,fit=(res)(vres)(wres)(mT)(wonly)(seed)(prior)] (L2) {};
+  \node[lane,fit=(res)(vres)(mT)(seed)(prior)] (L2) {};
 \end{scope}
 \node[hd,anchor=south west] at ([xshift=1mm]L2.north west) {ESTIMATED --- the only online degree of freedom};
 
@@ -727,18 +657,13 @@ and how the loop closes.
   -- node[lb,above,pos=0.55]{the loop closes through \emph{measurement}, never through the controller's intention} (2.0,1.55) -- (rot.north);
 \end{tikzpicture}
 \caption[How the payload parameter reaches the controller]{How the payload parameter reaches the controller. In the
-deployed estimator the window's measured velocities and its known inputs --- the
+estimator the window's measured velocities and its known inputs --- the
 measured attitude and the reconstructed thrust --- meet in one velocity residual
-\eqref{eq:redresid}, which identifies the single boxed decision variable. The
-full-state estimator of the evaluation campaigns (grey) used the thirteen-state
-residual \eqref{eq:mheresid}, whose angular-rate block constrained the vehicle's
-own attitude and rate but, by \eqref{eq:nodwdm}, not the mass directly. Everything in the \textsc{derived} band follows
+\eqref{eq:redresid}, which identifies the single boxed decision variable. Everything in the \textsc{derived} band follows
 from $\mT$ by the algebra of Section~\ref{sec:model:payload} and introduces
 neither a new unknown nor a new sensor; the inertia increment vanishes by itself
 when the estimate returns to the bare airframe, so no release event is needed to
-remove it. In the full-state estimator the same increment, lagged by one solve
-\eqref{eq:Afrozen}, was also written into its rotational model as a known
-parameter; the deployed estimator has no rotational model. The horizontal-offset parameters are held at zero by the operating
+remove it. The estimator has no rotational model. The horizontal-offset parameters are held at zero by the operating
 condition, not estimated. The loop closes through measured rotor speeds, never
 through the moment the solver intended. The residual specific force $\hat{\bm d}$ in the controller's parameter vector is estimated from the same measurements but is not a payload parameter (Section~\ref{sec:model:residual}).}
 \label{fig:paramflow}
@@ -794,26 +719,16 @@ $1.07$--$1.18$ times the latter; rotor drag acting through the vertical offset o
 the rotor plane produces a velocity-dependent body moment that \eqref{eq:rot}
 does not contain; and a constant torque bias of order \SI{0.01}{\newton\meter}
 appears in the reconstructed torque of an unloaded vehicle. These errors are the
-reason the mass is kept off the rotational channel, and the reason the deployed
+reason the mass is kept off the rotational channel, and the reason the
 estimator does not integrate that channel at all
 (Section~\ref{sec:model:rotchannel}). They remain in the controller's prediction
 model, where they appear as an unmodelled moment that the rate loop absorbs.
 
-\paragraph{The full-state estimator's inertia lags its mass by one solve.} The
-deployed estimator carries no inertia; in the full-state estimator the lagged
-treatment \eqref{eq:Afrozen} evaluates the increment at the previous solution,
-so during a grasp or release the estimator's inertia trails the true value by
-one \SI{0.1}{\second} solve, and under sustained manoeuvre a biased mass
-estimate is fed back into the next window's rotational model. The treatment
-reduces the loaded mass bias but does not remove it
-(Section~\ref{sec:eval:amode}).
-
 \paragraph{The inertia is treated as constant across a transfer.}
 Equation~\eqref{eq:rot} omits the $\dot{\Jt}\bm{\omega}$ term that a
 time-varying inertia would contribute. The omission is exact on either side of a
-grasp or release and wrong only for the duration of the transfer itself; within
-the estimator the affected samples fall inside a single window and are absorbed
-as process noise.
+grasp or release and wrong only for the duration of the transfer itself, which
+the controller's prediction shares with the plant's rate loop.
 
 \paragraph{The rotor model is static.} The thrust coefficient $k_f$ is a
 constant, and is known to lose validity under large induced inflow during fast
@@ -826,7 +741,7 @@ mild manoeuvre but not during rapid yaw. Because $\mT$ is recovered from an
 absolute thrust, a relative error in $k_f$ passes one-for-one into $\hat m$; this
 sensitivity is analytical and has not been measured in the evaluated
 configuration (Section~\ref{sec:eval:validity}). Translational data cannot
-separate the two: the deployed estimator flags a thrust-map error that drives
+separate the two: the estimator flags a thrust-map error that drives
 its estimate outside a physical band (Section~\ref{sec:frame:health}) but does
 not correct it.
 
@@ -838,11 +753,9 @@ inertia increment is the reduced mass times the square of the vertical arm, so
 the composite mass is the only payload quantity that has to be identified
 online; the inertia follows from it algebraically and vanishes with it. The mass
 is identified on the translational channel, from a thrust reconstructed from
-measured rotor speeds. The deployed estimator does not integrate the rotational
+measured rotor speeds. The estimator does not integrate the rotational
 dynamics at all --- the measured attitude enters as a known input --- so the
-optimiser cannot use the mass to absorb rotational model error; the full-state
-estimator of the evaluation campaigns achieved a weaker form of the same
-separation by carrying the inertia as a parameter lagged by one solve. The structure rests on stated
+optimiser cannot use the mass to absorb rotational model error. The structure rests on stated
 assumptions --- a centred grasp, a nominal arm and a calibrated rotor model ---
 whose limits are collected in Section~\ref{sec:model:approx}. What remains open
 is the numerical form of the estimator and the controller, and how a release is

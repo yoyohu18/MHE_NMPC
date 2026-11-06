@@ -163,12 +163,13 @@ an estimate that leaves a physical band instead of hiding it behind a hard bound
 Replayed on the 312 recorded campaign flights, it had a smaller loaded mass error
 than the full-state estimator in every nominal flight. The evaluation campaigns
 were flown with that earlier full-state form, which separated the channels more
-weakly by carrying the payload inertia as a parameter lagged by one solve; the
-lagged treatment halved the loaded mass bias in manoeuvre relative to omitting
-the inertia (Chapters~\ref{ch:model}, \ref{ch:framework} and
-Sections~\ref{sec:eval:amode}, \ref{sec:eval:reduced}).
-\draftnote{Add the closed-loop F/R result to this contribution once
-mhe\_variant\_ab\_20261105\_181925 is analysed.}
+weakly by carrying the payload inertia as a parameter lagged by one solve. In a
+paired closed-loop comparison of $96$ flights with everything else fixed, the
+deployed form met every pre-registered acceptance criterion: it lowered the
+loaded mass error from \SI{0.035}{\kg} to \SI{0.013}{\kg}, removed the
+manoeuvre-induced collapse of the estimate, solved about ten times faster and
+changed neither tracking nor the lifecycle (Chapters~\ref{ch:model},
+\ref{ch:framework} and Section~\ref{sec:eval:reduced}).
 
 \item \textbf{A continuous estimate-driven controller interface with an
 evidence-confirmed release lifecycle.} One health-gated frame updates the
@@ -189,8 +190,8 @@ and~\ref{sec:eval:campaign}).
 
 \item \textbf{A software-in-the-loop evaluation with randomised blocks, complete
 reporting, ablations and failure cases.} A frozen cohort of $120$ flights and a
-second frozen campaign of $312$, every flight reported, together with ablations of the residual specific force and the
-inertia treatment and an account of the failure modes --- in particular the
+second frozen campaign of $312$, every flight reported, together with an
+ablation of the residual specific force and an account of the failure modes --- in particular the
 collapse of the mass estimate under sustained manoeuvre and the false
 acceptances it causes in an always-on lifecycle (Chapter~\ref{ch:evaluation}).
 \end{enumerate}

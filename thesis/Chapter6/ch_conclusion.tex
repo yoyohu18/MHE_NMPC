@@ -23,7 +23,7 @@ release lifecycle in which acceptance of a release is gated on evidence --- in
 the deployed form an independent force balance, in the evaluation cohort the
 estimator's mass evidence. Chapter~\ref{ch:evaluation}
 evaluated the system in PX4/Gazebo software-in-the-loop simulation with a frozen
-cohort of $120$ flight attempts, two smaller frozen ablations and a second frozen
+cohort of $120$ flight attempts, a smaller frozen ablation and a second frozen
 campaign of $312$ flights. The findings below answer the five research
 objectives against that evidence.
 
@@ -49,25 +49,29 @@ inertia directly would perform better or worse, which was not compared.
 \item \textbf{Answer.} The estimator identifies the composite mass accurately in
 loaded hover, but under sustained manoeuvre the estimate is biased low and
 periodically collapses toward the bare airframe. Both statements describe the
-full-state estimator with which the campaigns were flown. Carrying the payload
-inertia in it as a lagged parameter reduces that bias without removing it; the
-deployed reduced estimator, which does not integrate the rotational dynamics,
-removes most of it in replay.
+full-state estimator with which the campaigns were flown. The deployed reduced
+estimator, which does not integrate the rotational dynamics, removes most of
+that bias and the collapse, in replay and in closed loop, at about a tenth of
+the computation.
 \item \textbf{Evidence.} In the frozen cohort the per-flight loaded-hover error
 lay between \SI{-0.44}{\percent} and \SI{-0.10}{\percent}; the loaded
 figure-eight bias had medians of \SI{-1.0}{\percent} at
 \SI{2}{\meter\per\second} and \SI{-4.1}{\percent} and \SI{-3.3}{\percent} at
 \SI{4}{\meter\per\second}, with dips to the mass lower bound and a median
 collapse fraction of $0.38$ for the lighter payload
-(Section~\ref{sec:eval:estimation}). In a sixteen-flight comparison the lagged
-inertia reduced the loaded bias from \SI{-8.9}{\percent} to \SI{-4.0}{\percent}
-(Section~\ref{sec:eval:amode}). Replayed on the 312 campaign flights, the reduced
+(Section~\ref{sec:eval:estimation}). Replayed on the 312 campaign flights, the reduced
 estimator lowered the median loaded mass error from \SI{0.036}{\kg} to
 \SI{0.013}{\kg}, smaller in every one of the 264 nominal flights, and returned to
 the empty value after every release, where the full-state estimate stayed about
-\SI{2}{\percent} low in 57 flights at \SI{4}{\meter\per\second}
-(Section~\ref{sec:eval:reduced}).
-\draftnote{Objective 2: add the closed-loop F/R evidence.}
+\SI{2}{\percent} low in 57 flights at \SI{4}{\meter\per\second}. In closed loop,
+over $48$ pairs flown with the same controller and release rule, the reduced
+estimator lowered the loaded mass error from \SI{0.035}{\kg} to \SI{0.013}{\kg}
+(better in $46$ pairs) and the post-release error from \SI{0.030}{\kg} to
+\SI{0.010}{\kg} (better in all $48$); at \SI{4}{\meter\per\second} the full-state
+estimate spent a median \SI{22}{\percent} of the loaded figure-eight below half
+the payload and the reduced estimate none, in any flight. The median solve time
+fell from \SI{2.8}{\milli\second} to \SI{0.3}{\milli\second}. Tracking and the
+lifecycle did not change (Section~\ref{sec:eval:reduced}).
 \item \textbf{Boundary.} Simulated rotor speeds are exact and the plant uses the
 thrust law the estimator inverts; the shortened arm; payloads of
 \SIrange{0.15}{0.30}{\kg}.
