@@ -147,7 +147,6 @@ nohup ros2 run offboard_test_acados mhe_node --ros-args \
     -p thrust_map_fault_gain:=$THRUST_FAULT_GAIN \
     -p motor_window_avg:=true -p input_min_z:=0.5 \
     -p event_trigger_enable:=true -p confirm_thresh_alpha:=1.5 \
-    -p no_payload_score_mode:=mass \
     > "$MHE_LOG" 2>&1 &
 
 echo "MHE_NMPC SITL up: nmpc=$NMPC_LOG mhe=$MHE_LOG"

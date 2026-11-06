@@ -21,16 +21,13 @@ import os
 import sys
 
 from offboard_test_acados.acados_params import (
-    OMEGA_MIN, OMEGA_SPAN, THROTTLE_MAX, THROTTLE_MIN, THRUST_BOX_LEGACY,
+    OMEGA_MIN, OMEGA_SPAN, THROTTLE_MAX, THROTTLE_MIN,
     THRUST_K, T_ACT_MAX, T_ACT_MIN, p, thrust_at_throttle,
 )
 
 
 def test_box_matches_actuator_envelope():
     """箱式约束 == 执行器在 clip 边界上能发出的推力。"""
-    if THRUST_BOX_LEGACY:
-        print('[SKIP] NMPC_THRUST_BOX_LEGACY=1,箱式约束是历史值,不做一致性检查')
-        return
     assert abs(p.Tmax - thrust_at_throttle(THROTTLE_MAX)) < 1e-9, (
         f'Tmax={p.Tmax} 与 95% 油门推力 {thrust_at_throttle(THROTTLE_MAX)} 不一致')
     assert abs(p.Tmin - thrust_at_throttle(THROTTLE_MIN)) < 1e-9, (
@@ -42,16 +39,8 @@ def test_box_matches_actuator_envelope():
 def test_box_within_hardware_limit():
     """约束上限不得超过硬件极限(100% 油门)。
 
-    legacy 档反过来断言它**确实**越界 —— 那正是这个档要复现的历史缺陷,
-    在这里如实记一笔比让测试变红有用。
     """
     hw_max = thrust_at_throttle(1.0)
-    if THRUST_BOX_LEGACY:
-        assert p.Tmax > hw_max, 'legacy 档的 Tmax 居然没越界?包线常数被改过了'
-        print(f'[PASS] test_box_within_hardware_limit '
-              f'(legacy 已知缺陷:Tmax {p.Tmax:.3f} > 硬件 {hw_max:.3f} N,'
-              f'超 {100 * (p.Tmax / hw_max - 1):.1f}%)')
-        return
     assert p.Tmax <= hw_max + 1e-9, (
         f'Tmax={p.Tmax:.3f}N 超过硬件极限 {hw_max:.3f}N —— 优化器会规划出'
         f'执行器根本发不出的推力')
@@ -81,9 +70,6 @@ def test_node_clip_uses_same_source():
 
 def test_hover_margin_is_honest():
     """带载悬停余量必须按真实包线算,不能再是 2mg 那个虚数。"""
-    if THRUST_BOX_LEGACY:
-        print('[SKIP] legacy 档')
-        return
     m_t = p.m_B + 0.30                      # 包线上限载荷
     hover = m_t * p.g
     assert p.Tmax > hover, (
@@ -97,7 +83,7 @@ def test_hover_margin_is_honest():
 
 
 if __name__ == '__main__':
-    print(f'=== legacy={THRUST_BOX_LEGACY} THRUST_K={THRUST_K:.6e} '
+    print(f'=== THRUST_K={THRUST_K:.6e} '
           f'omega=[{OMEGA_MIN:.0f},{OMEGA_MIN + OMEGA_SPAN:.0f}] '
           f'throttle=[{THROTTLE_MIN},{THROTTLE_MAX}] '
           f'T_ACT=[{T_ACT_MIN:.3f},{T_ACT_MAX:.3f}]N ===')

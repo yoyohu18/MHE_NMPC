@@ -211,16 +211,8 @@ def test_hover_torque_matches_com_offset():
     实测工况对应的 c≈[0,+1.4]cm。"""
     solver = ensure_acados_ocp_solver()
     m_t = p.m + 0.3
-    if p.geom_coupled:
-        # 耦合档:几何槛位装 r_p=[rx,ry,rz],c 由模型内部算 c=(m_P/m_T)·r_xy。
-        # 要得到同样的 c=[0,0.014] 就反解 ry = c_y·m_T/m_P。
-        m_p = m_t - p.m_B
-        r_p = (0.0, 0.014 * m_t / m_p, -0.47)
-        c = (0.0, (m_p / m_t) * r_p[1])
-        _set_reference(solver, HOVER_X, m=m_t, dJ=r_p[0], c=r_p[1:3])
-    else:
-        c = (0.0, 0.014)
-        _set_reference(solver, HOVER_X, m=m_t, dJ=0.05, c=c)
+    c = (0.0, 0.014)
+    _set_reference(solver, HOVER_X, m=m_t, dJ=0.05, c=c)
     _seed_initial_guess(solver, HOVER_X)
     solver.set(0, 'lbx', HOVER_X)
     solver.set(0, 'ubx', HOVER_X)

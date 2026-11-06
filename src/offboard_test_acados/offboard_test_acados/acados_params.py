@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 # 物理/安全常数集中在本包 common.py；Q/R/P/N/dt 是 NMPC 自己的配置。
 
-import os
 
 import numpy as np
-from .common import AirframeParams, QUAT_ERR_MODES
+from .common import AirframeParams
 
 _base = AirframeParams()
 
@@ -21,7 +20,7 @@ _base = AirframeParams()
 #   NMPC 以为的上限   2·m_B·g   = 40.50 N
 #   实际能发的上限   norm=0.95 = 31.35 N      ← 差 29%
 #   硬件极限         norm=1.00 = 34.19 N
-#   NMPC 以为的下限   _base.Tmin = 0.50 N
+#   NMPC 以为的下限   原值 0.50 N
 #   实际能发的下限   norm=0.05 =  1.27 N      ← 差 2.5×
 #
 # 后果不是"约束保守了一点",是**规划与执行脱钩**:带 0.3kg 载荷时悬停 23.2N,
@@ -36,8 +35,6 @@ _base = AirframeParams()
 #
 # ⚠️ 改这两个数会让 acados 重新生成+编译 solver(ubu/lbu 变了,
 #    is_code_reuse_possible 会判定不可复用),首次启动多花 10-30 秒,自动发生。
-# ⚠️ 这是**行为改变**:历史批次是在 40.50/0.50 的箱子里跑出来的。要逐位复现
-#    历史结果,置 NMPC_THRUST_BOX_LEGACY=1 退回旧值。
 THRUST_K     = 4.0 * 8.54858e-06  # T=THRUST_K·ω² [N/(rad/s)²],4 电机合计
 OMEGA_MIN    = 150.0              # SIM_GZ_EC_MIN
 OMEGA_SPAN   = 850.0              # SIM_GZ_EC_MAX(1000) − SIM_GZ_EC_MIN(150)
@@ -54,11 +51,6 @@ def thrust_at_throttle(norm: float) -> float:
 T_ACT_MIN = thrust_at_throttle(THROTTLE_MIN)   # 1.27 N
 T_ACT_MAX = thrust_at_throttle(THROTTLE_MAX)   # 31.35 N
 
-# 回退开关:1 = 用回 _base 的 0.5/2mg(复现 2026-09-10 之前的批次)
-THRUST_BOX_LEGACY = os.environ.get(
-    'NMPC_THRUST_BOX_LEGACY', '0') not in ('0', '', 'false', 'False')
-
-
 class AcadosParams:
     # --- 物理常数统一定义在本包 common.AirframeParams。---
     m   = _base.m    # 机体质量(kg)。出现在推力方程 vel_dot=(1/m)(R@[0,0,T]-kd*v)-g 里
@@ -74,11 +66,10 @@ class AcadosParams:
     kd  = _base.kd   # 线性空气阻力系数,vel_dot 里的 -kd*vel 项,模拟桨叶/机身阻力
                       # Linear drag coefficient, the -kd*vel term in vel_dot (models prop/airframe drag)
     # 推力箱式约束 = 执行器真实包线(见文件头 T_ACT_MIN/MAX 那段)。
-    # legacy 档退回 _base 的 0.5N / 2·m·g,仅用于复现历史批次。
-    Tmin    = _base.Tmin if THRUST_BOX_LEGACY else T_ACT_MIN
+    Tmin    = T_ACT_MIN
                             # 总推力下限(N),acados 输入约束 lbu[0]。
                             # Min total thrust (N) = actuator floor at 5% throttle
-    Tmax    = _base.Tmax if THRUST_BOX_LEGACY else T_ACT_MAX
+    Tmax    = T_ACT_MAX
                             # 总推力上限(N),acados 输入约束 ubu[0]。
                             # Max total thrust (N) = actuator ceiling at 95% throttle
     tau_max = _base.tau_max # roll/pitch 力矩约束上限(Nm),输入约束 ubu[1],ubu[2]
@@ -93,31 +84,7 @@ class AcadosParams:
     # "空机标定值/兜底初值/Tmax 基准"这三处出现,永远是 m_B。
     m_B = _base.m
 
-    # --- 几何-质量耦合开关(2026-08-24,与 mhe_params.geom_coupled 同一套物理)---
-    # False(默认,历史批次逐位复现):model.p 的几何槛位 = [dJ, cx, cy],由
-    #   acados_nmpc_node 在窗外算好;J/c 与 model.p 里的质量无函数关系。
-    # True:几何槛位 = [rx, ry, rz](载荷相对机体原点的偏移),J(m)/c(m) 在模型
-    #   内部由质量槛位现算(完整 3x3 平行轴定理,含非对角项)。
-    # 控制器侧的取舍与估计器侧**不同**,别无脑一起开:MHE 打开耦合是纯收益
-    #   (它需要 dw_dot/dm 这条导数通路才能辨识质量);NMPC 打开耦合会把 c 重新绑回
-    #   m_est(c=(m_P/m)r_xy),而 B.3 的结论正好是"c 用 tau_phys 反算的在线观测比
-    #   用 m_est 推更鲁棒"(记忆 b3-strong-closed-loop-dr)。所以推荐组合是
-    #   MHE 耦合 + NMPC 几何仍走 online 观测;NMPC 耦合档留给"只有弱先验、拿不到
-    #   在线 c 观测"的场景,以及对照实验。
-    geom_coupled = os.environ.get('NMPC_GEOM_COUPLED', '0') not in ('0', '', 'false', 'False')
-    payload_ki = float(os.environ.get('NMPC_PAYLOAD_KI', '0.0'))
-    mp_pos_eps = 0.02
-
-    # --- 姿态误差形式(2026-11-05)---
-    # 'vec'(默认,所有已报告批次):q_ref* ⊗ q 的向量部分,3 维。
-    # 'euclid':q − q_ref,4 维,与 MHE 测量残差同一形式;节点在写参数前把参考
-    #   四元数沿预测时域做半球对齐(common.align_quat_hemisphere),否则 ±q 翻号会
-    #   让零角度误差变成范数 2 的残差。小角度下两种形式幅值都是 |δθ|/2,L_att 通用。
-    quat_err = os.environ.get('NMPC_QUAT_ERR', 'vec').strip().lower()
-    if quat_err not in QUAT_ERR_MODES:
-        raise ValueError(f'NMPC_QUAT_ERR={quat_err!r} not in {QUAT_ERR_MODES}')
-    nq_err = 4 if quat_err == 'euclid' else 3
-
+    nq_err = 3   # 姿态误差维数:q_ref* ⊗ q 的向量部分
     nx = 13  # 状态维度: pos(3)+vel(3)+quat(4)+omega(3) = 13
               # State dimension: pos(3)+vel(3)+quat(4)+omega(3) = 13
     nu = 4   # 控制维度: 总推力 T(1) + 力矩 tau_x,tau_y,tau_z(3) = 4
@@ -180,7 +147,6 @@ class AcadosParams:
     #             attitude error (eq_vec, quaternion vector part) weight = 1/L_att^2 = 400
     #   block 4 = 角速度误差(eomega)权重 = 1/L_omega^2 ≈ 11.1
     #             angular-rate error (eomega) weight = 1/L_omega^2 ≈ 11.1
-    # 对角阵,姿态块维数随 quat_err 为 3('vec')或 4('euclid')。
     Q = np.diag([1/L_pos**2]*3 + [1/L_vel**2]*3 + [1/L_att**2]*nq_err
                 + [1/L_omega**2]*3)
     # R 作用在 u-u_hover 的 4 维残差上,对角线依次是:
@@ -219,59 +185,3 @@ class AcadosParams:
 
 
 p = AcadosParams()
-
-# figure8(Gerono lemniscate)参考 yaw_rate 峰值与角速率 w 的比例常数,
-# yaw_rate_peak = YAW_RATE_K * w,与半径 r 无关。数值实测值,推导见
-# scaled_stage_terminal_W 的 docstring。
-YAW_RATE_K = 3.17
-
-
-def scaled_stage_terminal_W(r, w):
-    """按 figure8 轨迹尺度 (r, w) 重算 Bryson 权重,返回 (W_stage, W_e)。
-
-    L_vel/L_omega 的注释本身就把这两个"容许误差量级"定义成跟轨迹挂钩的量
-    (L_vel = 特征速度 r*w;L_omega 跟参考 yaw_rate 同量级),但类里是按
-    r=1.0/w=0.3 的低速工况写死的常数。轨迹尺寸/速度一提上去,这两项就跟实际
-    信号量级差一个数量级,Bryson 无量纲化失效、Gauss-Newton 的 Hessian 各方向
-    曲率重新失衡——正是当年 res_stat 崩到 6.26e5 的同一类病根。
-
-    Gerono lemniscate 的两个特征量:
-      特征速度      r*w             (峰值 √2*r*w,在交叉点)
-      yaw_rate 峰值 YAW_RATE_K*w    (与 r 无关)
-
-    YAW_RATE_K=3.17 是数值扫整圈量出来的(见 verify_traj_scale.py:yaw_rate 峰
-    与 w 严格成正比,比值 3.170)。解析上 yaw_rate(a)=w*(sa*c2a-2*ca*s2a)/
-    (ca^2+c2a^2),极值不在 a=π/4(那里只有 2.83)——按 π/4 估会低估 12%。
-
-    两者都取 max(原值, 新值):只放宽、不收紧,避免在低速工况下反而把权重改严。
-
-    注意低速代入后**不是**原封不动的那组数:
-      L_vel   r=1.0/w=0.3 → max(0.3, 0.30)=0.30,复现原值;
-      L_omega w=0.3       → max(0.3, 0.951)=0.951,放宽了 3.2 倍。
-    后者不是本函数引入的偏差,而是暴露了一处既有失配——L_omega=0.3 的注释写的
-    是"跟**圆形**轨迹的恒定 yaw_rate 同量级"(圆形 yaw_rate 恒为 w),但实际飞的
-    是 figure8,它的 yaw_rate 峰值是 3.17w,原值对 figure8 本来就偏紧 3.2 倍。
-    调用方默认不开这条路径(traj_scale_weights=False),历史批次不受影响;要在
-    高机动批次里用,就得接受 L_omega 一并被修正,别把它和速度尺度的效应混为
-    一谈(混算两种效应会压低统计功效)。
-
-    返回值直接喂 solver.cost_set(i,'W',·) / cost_set(N,'W',·),与
-    acados_solver_builder 里 ocp.cost.W / W_e 的构造保持同一形状。
-    """
-    L_vel   = max(p.L_vel,   float(r) * float(w))
-    L_omega = max(p.L_omega, YAW_RATE_K * float(w))
-
-    def _blocks(pos_k, att_k, om_k):
-        return np.diag([pos_k*(1/p.L_pos**2)]*3 + [1/L_vel**2]*3
-                       + [att_k*(1/p.L_att**2)]*p.nq_err + [om_k*(1/L_omega**2)]*3)
-
-    # stage:Q 与 R 的块对角,跟 acados_solver_builder 的拼法一致(R 不随轨迹
-    # 尺度变——它的典型尺度是推力/力矩约束,跟飞多快无关)
-    Q_s = _blocks(1.0, 1.0, 1.0)
-    W_stage = np.block([
-        [Q_s,                                np.zeros((Q_s.shape[0], p.R.shape[1]))],
-        [np.zeros((p.R.shape[0], Q_s.shape[1])), p.R],
-    ])
-    # terminal:沿用类里那组相对放大倍数(位置 20×、速度 1×、姿态 2×、角速度 0.2×)
-    W_e = _blocks(20.0, 2.0, 0.2)
-    return W_stage, W_e

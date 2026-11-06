@@ -25,7 +25,6 @@ class MHEParams:
     kd = _base.kd
     Jxx, Jyy, Jzz = _base.Jxx, _base.Jyy, _base.Jzz
     m_B = float(_base.m)          # 空机质量
-    m_nominal = m_B
 
     # --- 窗口 ---
     N = int(os.environ['MHE_N']) if os.environ.get('MHE_N') else 20
@@ -43,9 +42,6 @@ class MHEParams:
     # --- 质量数值边界(只防 1/m 奇异与跑飞)---
     m_min_num = _env_float('MHE_REDUCED_M_MIN', 0.70 * m_B)
     m_max = _env_float('MHE_REDUCED_M_MAX', 5.0)
-    # NMPC 侧沿用的"空机下界"常数(acados_nmpc_node 的 c_xy 冻结判据读 mhe_p.m_min);
-    # 估计器自身不用它。
-    m_min = 0.95 * m_B
 
     # --- 质量健康带(不使用任何真值)---
     mp_envelope = _env_float('MHE_MP_ENVELOPE', 0.30)     # 机架载荷包线
@@ -60,7 +56,6 @@ class MHEParams:
 
     # --- 对外发布的惯量(由质量代数推出)---
     rz_prior = _env_float('MHE_RZ_PRIOR', -0.27)   # 名义吊臂 [m]
-    payload_ki = 0.0
 
     def weight_blocks(self):
         return {'R': self.R, 'Q': self.Q, 'Q0': self.Q0,

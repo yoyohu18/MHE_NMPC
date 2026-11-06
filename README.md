@@ -21,7 +21,7 @@ src/offboard_test_acados/            ROS2 包（包名沿用旧名，节点名�
       node.py                          ROS2 节点 mhe_node
     acados_nmpc_node.py ...          NMPC 节点（主线精简版，默认参数即主线取值）及其依赖
     gripper/proximity_gripper_node.py 夹爪节点
-  test/                              单元测试（78 个）
+  test/                              单元测试（71 个）
   config/ worlds/ gz_plugins/        夹爪参数、Gazebo 世界、磁吸夹爪插件源码
 scripts/
   run_sitl.sh                        一键启动主线 SITL（headless）
@@ -98,8 +98,10 @@ NMPC 是闭环的，没有录好的输入流可回放，所以用 `scripts/tools
       逐位等价（见上）；SITL 回归（`results/*_20261105_211609.*`）：t=101.1 s 投放、2.4 s 后 acc
       确认释放，NMPC 求解失败 0 次，MHE 全程 healthy。单测删去只针对已移除功能的 33 个
       （原件仍在 `ros2_ws_HJH`），其余 78 个通过。`straight_reference.py` 已无引用，删除。
-- [ ] `acados_params.py` 里仍有改变求解器代码生成的环境变量开关（`NMPC_GEOM_COUPLED`、
-      `NMPC_QUAT_ERR`、`NMPC_PAYLOAD_KI`、`NMPC_THRUST_BOX_LEGACY`），主线全取默认值；要删需重新
-      生成求解器并对拍。
+- [x] 死代码清理（2026-11-06）：删去 `acados_params.py` 里改变代码生成的环境变量开关
+      （`NMPC_GEOM_COUPLED`、`NMPC_QUAT_ERR`、`NMPC_PAYLOAD_KI`、`NMPC_THRUST_BOX_LEGACY`）及
+      coupled/euclid 分支、`payload_estimate.py` 的旧释放判据与乘积分数、MHE 的
+      `no_payload_score_mode` 等。重新生成的 NMPC/MHE 求解器 C 代码与清理前逐字节相同，
+      NMPC 离线对拍 4 个场景逐位等价。
 - [ ] 论文：填入 96 架闭环配对结果（第 5 章 §5.7.3、摘要、第 1/6 章的 draftnote）。
 - [ ] RViz 可视化启动脚本（旧空间的 `run_sitl_gripper_viz.sh`）尚未迁移。

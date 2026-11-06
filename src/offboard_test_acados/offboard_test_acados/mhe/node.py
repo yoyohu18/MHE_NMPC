@@ -31,9 +31,8 @@ from actuator_msgs.msg import Actuators
 from ..common import quat_to_rotmat
 from ..lifecycle_trace import evt_line
 from ..payload_estimate import (
-    NO_PAYLOAD_SCORE_MODES,
     PayloadEstimate,
-    inertia_from_mass_moment,
+    inertia_from_mass,
     no_payload_evidence_score,
     relative_error_percent,
 )
@@ -70,16 +69,13 @@ class MHENode(Node):
         dp('payload_solution_fresh_sec', 0.30)
         dp('payload_output_tau_sec', 0.25)
         dp('input_min_z', 0.5)                 # 已知输入的离地高度门控 [m]
-        dp('pre_offboard_min_z', 0.5)          # 旧名,兼容旧启动参数
         dp('motor_window_avg', True)
         dp('grip_payload_envelope', 0.3)
         dp('eval_true_payload_mass', 0.0)
-        dp('no_payload_score_mode', 'mass')
         dp('no_payload_mass_full', 0.015)
         dp('no_payload_mass_zero', 0.060)
         dp('event_trigger_enable', True)
         dp('schedule_theta', [float(v) for v in M0_THETA])
-        dp('event_confirm_thresh_n', 1.5)
         dp('confirm_thresh_alpha', 1.5)
         dp('resid_baseline_tau_sec', 3.0)
         dp('resid_persist_frames', 2)
@@ -98,24 +94,17 @@ class MHENode(Node):
         self.payload_input_fresh_sec = max(float(gv('payload_input_fresh_sec')), P.dt)
         self.payload_solution_fresh_sec = max(float(gv('payload_solution_fresh_sec')), P.dt)
         self.payload_output_tau = max(float(gv('payload_output_tau_sec')), 1e-3)
-        z_new, z_old = float(gv('input_min_z')), float(gv('pre_offboard_min_z'))
-        self.input_min_z = z_old if z_old != 0.5 and z_new == 0.5 else z_new
+        self.input_min_z = float(gv('input_min_z'))
         self.motor_window_avg = bool(gv('motor_window_avg'))
         self.grip_payload_envelope = float(gv('grip_payload_envelope'))
         self.eval_true_payload_mass = float(gv('eval_true_payload_mass'))
-        self.no_payload_score_mode = str(gv('no_payload_score_mode')).strip().lower()
-        if self.no_payload_score_mode not in NO_PAYLOAD_SCORE_MODES:
-            raise ValueError(f'no_payload_score_mode={self.no_payload_score_mode!r}')
         self._payload_conf_args = {
             'mass_full': float(gv('no_payload_mass_full')),
             'mass_zero': float(gv('no_payload_mass_zero')),
-            'moment_full': 0.0015, 'moment_zero': 0.0060,
-            'inertia_full': 0.0020, 'inertia_zero': 0.0100,
         }
         self.event_enabled = bool(gv('event_trigger_enable'))
-        alpha = float(gv('confirm_thresh_alpha'))
-        self.confirm_thresh = (alpha * P.g * self.grip_payload_envelope if alpha >= 0.0
-                               else float(gv('event_confirm_thresh_n')))
+        # 推力残差阈值 = alpha · g · 载荷包线(主线 1.5·9.81·0.3 ≈ 4.4 N)
+        self.confirm_thresh = float(gv('confirm_thresh_alpha')) * P.g * self.grip_payload_envelope
         self.resid_ema_alpha = P.dt / max(float(gv('resid_baseline_tau_sec')), P.dt)
         self.resid_persist = max(1, int(gv('resid_persist_frames')))
         self.resid_warmup = max(1, int(gv('resid_warmup_frames')))
@@ -433,16 +422,13 @@ class MHENode(Node):
             mp_target = max(float(self.m_est) - P.m_B, 0.0)
             self._m_payload_out += a * (mp_target - self._m_payload_out)
         m_out = P.m_B + self._m_payload_out
-        s0 = np.zeros(2)
-        c_xy, dJ_diag, J_diag = inertia_from_mass_moment(
-            m_out, s0, P.m_B, [P.Jxx, P.Jyy, P.Jzz], P.rz_prior, payload_ki=P.payload_ki)
+        s0 = np.zeros(2)       # 帧格式保留的一阶矩/偏心字段,主线恒为 0
+        dJ_diag, J_diag = inertia_from_mass(m_out, P.m_B, [P.Jxx, P.Jyy, P.Jzz], P.rz_prior)
         if healthy:
-            target = no_payload_evidence_score(self._m_payload_out, s0, dJ_diag,
-                                               mode=self.no_payload_score_mode,
-                                               **self._payload_conf_args)
+            target = no_payload_evidence_score(self._m_payload_out, **self._payload_conf_args)
             a = 1.0 - math.exp(-P.dt / self.payload_output_tau)
             self._conf += a * (target - self._conf)
-        est = PayloadEstimate(m_total=m_out, s_xy=s0, c_xy=c_xy, dJ_diag=dJ_diag,
+        est = PayloadEstimate(m_total=m_out, s_xy=s0, c_xy=s0, dJ_diag=dJ_diag,
                               J_diag=J_diag, no_payload_confidence=self._conf,
                               healthy=healthy, solution_age_sec=age)
         self.payload_estimate_pub.publish(Float64MultiArray(data=est.as_array().tolist()))

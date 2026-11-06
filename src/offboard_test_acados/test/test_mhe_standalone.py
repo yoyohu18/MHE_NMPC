@@ -349,10 +349,7 @@ class _NodeStub:
         self.payload_output_tau = 0.25
         self._m_payload_out = 0.0
         self._conf = 1.0
-        self.no_payload_score_mode = 'mass'
-        self._payload_conf_args = dict(mass_full=0.015, mass_zero=0.060,
-                                       moment_full=0.0015, moment_zero=0.0060,
-                                       inertia_full=0.0020, inertia_zero=0.0100)
+        self._payload_conf_args = dict(mass_full=0.015, mass_zero=0.060)
 
     def get_logger(self):
         return self.log

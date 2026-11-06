@@ -31,7 +31,7 @@ from sensor_msgs.msg import Imu
 from std_msgs.msg import Bool, Float64, Float64MultiArray
 from actuator_msgs.msg import Actuators
 
-from .common import align_quat_hemisphere, quat_to_rotmat
+from .common import quat_to_rotmat
 from .figure8_reference import (
     auto_ramp_time,
     build_reference_figure8,
@@ -232,10 +232,6 @@ class AcadosNMPCNode(Node):
         self.get_logger().info(
             f'LUMPED FORCE: on (a={self.l1.a:.1f}, omega_c={self.l1.omega_c:.1f})'
             ' — L1 平动残差补偿,标称质量取 m_est')
-        self.get_logger().info(
-            f'NMPC QUAT ERR: {p.quat_err} '
-            + ('(q - q_ref, 4-dim, reference hemisphere-aligned)'
-               if p.quat_err == 'euclid' else '(vector part of q_ref* x q, 3-dim)'))
         if self.thrust_map_fault_gain != 1.0:
             self.get_logger().warn(
                 f'[thrust-fault] estimator-side thrust map gain='
@@ -1027,11 +1023,6 @@ class AcadosNMPCNode(Node):
         self._confirm_no_payload_if_persistent()
 
         Xref_win = self.ref_window_fn(t_ref, p.N, p.dt, z_hover=self.z_hover)
-        if p.quat_err == 'euclid':
-            # q − q_ref 不具 ±q 不变性:把参考四元数沿时域对齐到当前姿态所在半球。
-            Xref_win = np.array(Xref_win, dtype=float, copy=True)
-            Xref_win[6:10, :] = align_quat_hemisphere(Xref_win[6:10, :],
-                                                      x_cur[6:10])
 
         self.solver.set(0, 'lbx', x_cur)
         self.solver.set(0, 'ubx', x_cur)

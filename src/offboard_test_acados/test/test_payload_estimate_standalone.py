@@ -5,8 +5,7 @@ import numpy as np
 
 from offboard_test_acados.payload_estimate import (
     headroom_limited_scale,
-    inertia_from_mass_moment,
-    no_payload_confidence,
+    inertia_from_mass,
     no_payload_evidence_score,
     PayloadEstimate,
     relative_error_percent,
@@ -14,15 +13,16 @@ from offboard_test_acados.payload_estimate import (
 )
 
 
-def test_round_trip_and_mass_moment_algebra():
+def test_round_trip_and_mass_inertia_algebra():
     m_b = 2.0643
     m = m_b + 0.2
-    s = np.array([0.0, 0.2 * 0.093])
-    c, dj, J = inertia_from_mass_moment(
-        m, s, m_b, [0.0142, 0.0142, 0.0284], -0.47)
-    assert np.allclose(c, s / m)
-    assert dj[0] > 0 and dj[1] == dj[0] and dj[2] == 0
-    estimate = PayloadEstimate(m, s, c, dj, J, 0.1, True, 0.02)
+    s = np.array([0.0, 0.0])
+    dj, J = inertia_from_mass(m, m_b, [0.0142, 0.0142, 0.0284], -0.27)
+    mu = m_b * 0.2 / m
+    assert np.isclose(dj[0], mu * 0.27 ** 2) and dj[1] == dj[0] and dj[2] == 0
+    assert np.array_equal(inertia_from_mass(m_b - 0.05, m_b, [1, 1, 1], -0.27)[0],
+                          np.zeros(3))          # 比空机还轻:载荷取正部为 0
+    estimate = PayloadEstimate(m, s, s, dj, J, 0.1, True, 0.02)
     decoded = PayloadEstimate.from_array(estimate.as_array())
     assert decoded.m_total == m
     assert np.allclose(decoded.s_xy, s)
@@ -31,46 +31,19 @@ def test_round_trip_and_mass_moment_algebra():
     assert decoded.solution_age_sec == 0.02
 
 
-def test_legacy_payload_frame_is_never_assumed_healthy():
-    legacy = np.zeros(12)
-    legacy[0] = 2.0643
-    legacy[11] = 1.0
-    decoded = PayloadEstimate.from_array(legacy)
-    assert not decoded.healthy
-    assert decoded.solution_age_sec > 100.0
 
 
-def test_first_moment_vetoes_false_empty_mass():
-    # Reproduces the important failure mode: mass touches the empty-airframe
-    # bound while a clear eccentric-payload moment remains.
-    conf = no_payload_confidence(
-        0.0, [0.0, 0.018], [0.0, 0.0, 0.0])
-    assert conf == 0.0
-    assert no_payload_confidence(0.0, [0.0, 0.0], [0.0, 0.0, 0.0]) == 1.0
 
 
-def test_no_payload_requires_all_three_estimates_to_decay():
-    assert no_payload_confidence(
-        0.0, [0.0, 0.0], [0.02, 0.02, 0.0]) == 0.0
-    mid = no_payload_confidence(
-        0.03, [0.0, 0.003], [0.005, 0.005, 0.0])
-    assert 0.0 < mid < 1.0
 
 
-def test_mass_score_ignores_derived_inertia_and_moment():
-    """The current score has one evidential input: payload mass."""
-    base = no_payload_evidence_score(
-        0.03, [0.0, 0.0], [0.0, 0.0, 0.0], mode='mass')
-    changed = no_payload_evidence_score(
-        0.03, [np.nan, np.nan], [np.nan, np.nan, np.nan], mode='mass')
-    assert base == changed
-    assert 0.0 < base < 1.0
+def test_mass_score_thresholds():
+    """The score has one evidential input: payload mass."""
+    assert no_payload_evidence_score(0.010) == 1.0
+    assert no_payload_evidence_score(0.070) == 0.0
+    assert 0.0 < no_payload_evidence_score(0.03) < 1.0
 
 
-def test_legacy_score_remains_available_for_frozen_cohort_replay():
-    args = (0.03, [0.0, 0.003], [0.005, 0.005, 0.0])
-    assert no_payload_evidence_score(*args, mode='legacy_product') == \
-        no_payload_confidence(*args)
 
 
 def test_slew_is_continuous_and_bidirectional():
@@ -104,12 +77,8 @@ def test_zero_thrust_diagnostic_never_divides_by_zero():
 
 
 if __name__ == '__main__':
-    test_round_trip_and_mass_moment_algebra()
-    test_legacy_payload_frame_is_never_assumed_healthy()
-    test_first_moment_vetoes_false_empty_mass()
-    test_no_payload_requires_all_three_estimates_to_decay()
-    test_mass_score_ignores_derived_inertia_and_moment()
-    test_legacy_score_remains_available_for_frozen_cohort_replay()
+    test_round_trip_and_mass_inertia_algebra()
+    test_mass_score_thresholds()
     test_slew_is_continuous_and_bidirectional()
     test_omega_scale_uses_headroom_before_hard_saturation()
     test_omega_scale_is_not_reduced_without_need()
