@@ -1,0 +1,136 @@
+<?xml version="1.0"?>
+<!--
+  跟 Gazebo 仿真里实际飞的 x500 机型几何尺寸/mesh 完全对齐,数值直接抄自
+  PX4-Autopilot/Tools/simulation/gz/models/x500_base/model.sdf,不是随手估的。
+  只保留必要的视觉几何(机身+4个电机底座+4个电机/桨叶 mesh),省略了 SDF 里
+  那两块纯装饰用的 NXP/RDDRONE 贴花平面。
+
+  4个 rotor 关节是 continuous(绕自身 Z 轴无限旋转),角度由
+  prop_joint_state_publisher.py 喂 /joint_states 驱动——那个节点订阅 PX4
+  实际发给 Gazebo 电机模型的转速指令(经 ros_gz_bridge 桥接的
+  /x500_payload_0/command/motor_speed),把转速积分成角度。rotor_0/1 用 ccw 桨叶
+  mesh、rotor_2/3 用 cw,旋转方向的正负号在该节点里按这个 handedness 分别
+  处理,不在这里处理。
+-->
+<robot name="x500">
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 0.025" rpy="0 0 3.141592654"/>
+      <geometry>
+        <mesh filename="file:///home/clear/PX4-Autopilot/Tools/simulation/gz/models/x500_base/meshes/NXP-HGD-CF.dae"/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0.174 0.174 0.032" rpy="0 0 -0.45"/>
+      <geometry>
+        <mesh filename="file:///home/clear/PX4-Autopilot/Tools/simulation/gz/models/x500_base/meshes/5010Base.dae"/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0.174 0.174 0.032" rpy="0 0 -0.45"/>
+      <geometry>
+        <mesh filename="file:///home/clear/PX4-Autopilot/Tools/simulation/gz/models/x500_base/meshes/5010Base.dae"/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0.174 -0.174 0.032" rpy="0 0 -0.45"/>
+      <geometry>
+        <mesh filename="file:///home/clear/PX4-Autopilot/Tools/simulation/gz/models/x500_base/meshes/5010Base.dae"/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0.174 -0.174 0.032" rpy="0 0 -0.45"/>
+      <geometry>
+        <mesh filename="file:///home/clear/PX4-Autopilot/Tools/simulation/gz/models/x500_base/meshes/5010Base.dae"/>
+      </geometry>
+    </visual>
+  </link>
+
+  <link name="rotor_0">
+    <visual>
+      <origin xyz="-0.022 -0.14638461538461536 -0.016" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="file:///home/clear/PX4-Autopilot/Tools/simulation/gz/models/x500_base/meshes/1345_prop_ccw.stl"
+              scale="0.8461538461538461 0.8461538461538461 0.8461538461538461"/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0 0 -0.032" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="file:///home/clear/PX4-Autopilot/Tools/simulation/gz/models/x500_base/meshes/5010Bell.dae"/>
+      </geometry>
+    </visual>
+  </link>
+  <joint name="rotor_0_joint" type="continuous">
+    <parent link="base_link"/>
+    <child link="rotor_0"/>
+    <origin xyz="0.174 -0.174 0.06" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+  </joint>
+
+  <link name="rotor_1">
+    <visual>
+      <origin xyz="-0.022 -0.14638461538461536 -0.016" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="file:///home/clear/PX4-Autopilot/Tools/simulation/gz/models/x500_base/meshes/1345_prop_ccw.stl"
+              scale="0.8461538461538461 0.8461538461538461 0.8461538461538461"/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0 0 -0.032" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="file:///home/clear/PX4-Autopilot/Tools/simulation/gz/models/x500_base/meshes/5010Bell.dae"/>
+      </geometry>
+    </visual>
+  </link>
+  <joint name="rotor_1_joint" type="continuous">
+    <parent link="base_link"/>
+    <child link="rotor_1"/>
+    <origin xyz="-0.174 0.174 0.06" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+  </joint>
+
+  <link name="rotor_2">
+    <visual>
+      <origin xyz="-0.022 -0.14638461538461536 -0.016" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="file:///home/clear/PX4-Autopilot/Tools/simulation/gz/models/x500_base/meshes/1345_prop_cw.stl"
+              scale="0.8461538461538461 0.8461538461538461 0.8461538461538461"/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0 0 -0.032" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="file:///home/clear/PX4-Autopilot/Tools/simulation/gz/models/x500_base/meshes/5010Bell.dae"/>
+      </geometry>
+    </visual>
+  </link>
+  <joint name="rotor_2_joint" type="continuous">
+    <parent link="base_link"/>
+    <child link="rotor_2"/>
+    <origin xyz="0.174 0.174 0.06" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+  </joint>
+
+  <link name="rotor_3">
+    <visual>
+      <origin xyz="-0.022 -0.14638461538461536 -0.016" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="file:///home/clear/PX4-Autopilot/Tools/simulation/gz/models/x500_base/meshes/1345_prop_cw.stl"
+              scale="0.8461538461538461 0.8461538461538461 0.8461538461538461"/>
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="0 0 -0.032" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="file:///home/clear/PX4-Autopilot/Tools/simulation/gz/models/x500_base/meshes/5010Bell.dae"/>
+      </geometry>
+    </visual>
+  </link>
+  <joint name="rotor_3_joint" type="continuous">
+    <parent link="base_link"/>
+    <child link="rotor_3"/>
+    <origin xyz="-0.174 -0.174 0.06" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+  </joint>
+</robot>

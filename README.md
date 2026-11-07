@@ -27,6 +27,8 @@ scripts/
   run_sitl.sh                        一键启动主线 SITL（headless）
   run_batch.sh                       主线批次驱动（排程、代码指纹、逐架判定、补跑、汇总）
   stop_sitl.sh                       停止仿真
+  run_sitl_viz.sh / stop_sitl_viz.sh 可视化:run_sitl.sh(原样)+ Gazebo GUI + RViz;收栈含 RViz
+  viz/                               RViz 用的 x500 URDF、TF 广播、旋翼动画(不在 ROS 包里,不进代码指纹)
   tools/                             心跳、溯源记录、多箱世界生成、MHE/NMPC 新旧等价对拍工具
 docs/reference_params_20261105/      录自旧空间运行中批次的节点实际参数（基准）
 thesis/                              学位论文（R 为主线的版本，2026-11-05 自 ros2_ws_HJH/src/paper/thesis 复制）
@@ -48,6 +50,10 @@ ACADOS_SOURCE_DIR=/home/clear/acados LD_LIBRARY_PATH=/home/clear/acados/lib pyth
 bash scripts/run_sitl.sh
 PAYLOAD_KG=0.15 SPEED=4 DETACH_DELAY_SEC=4 bash scripts/run_sitl.sh   # 其他工况
 bash scripts/stop_sitl.sh
+
+# 可视化(Gazebo GUI + RViz;主线配置与 run_sitl.sh 相同,开关也相同;日志在 results/viz_<时间>)
+bash scripts/run_sitl_viz.sh                    # GZ_GUI=0 / RVIZ=0 可关其一
+bash scripts/stop_sitl_viz.sh
 
 # 批次(随机化排程 + 逐架判定 + 汇总,结果在 results/batch_<EXP>_<时间>/summary.md)
 DRY_RUN=1 EXP=faults bash scripts/run_batch.sh       # 只看排程
