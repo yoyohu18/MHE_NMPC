@@ -14,9 +14,9 @@ dissertation studies how far such a vehicle can adapt to a centred rigid payload
 from ordinary flight signals, and how it should decide that a commanded release
 has physically happened.
 
-For a payload grasped on the thrust axis, the inertia increment is the reduced
-mass times the square of a nominal vertical arm, so the composite mass is the
-only payload quantity to be identified online. A moving horizon estimator
+For a payload grasped on the thrust axis, rigid-body algebra makes the inertia
+increment the reduced mass times the square of a nominal vertical arm, so the
+composite mass is the only payload quantity to be identified online. A moving horizon estimator
 identifies it from odometry and the thrust reconstructed from measured rotor
 speeds. In its deployed form it keeps only velocity and mass as states and takes
 the measured attitude as a known input, so that the less reliable rotational
@@ -24,7 +24,9 @@ model has no path to the mass. In a paired closed-loop comparison of $96$
 flights against a full-state estimator, this form lowered the loaded mass error
 from \SI{0.035}{\kg} to \SI{0.013}{\kg}, removed the collapse of the estimate in
 manoeuvre and solved about ten times faster, without changing tracking or release
-safety. One
+safety. Replayed on the same flights, an extended Kalman filter with the same
+inputs was as accurate: the gain comes from the model structure, not from the
+moving horizon. One
 health-gated estimate updates a nonlinear model predictive controller
 continuously; a separate lifecycle accepts a release only when evidence
 confirms that the payload has left --- in the deployed form, a force balance of
@@ -32,30 +34,31 @@ the reconstructed thrust against the specific force measured by the inertial
 unit, which does not pass through the mass estimate.
 
 The system is evaluated in PX4/Gazebo software-in-the-loop simulation with
-acados solvers, using a frozen, block-randomised cohort of $120$ flight attempts
-($118$ eligible) at three payload--speed conditions, under nominal release and
-under a detachment held back for \SI{4}{\second} after the command, together with
-smaller ablations and a second frozen campaign of $312$ flights.
+acados solvers. The deployed combination of the reduced estimator and the
+force-balance rule was validated in $180$ flights from a tagged commit, at two
+payloads and two speeds, under nominal and delayed release, uncommanded loss, a
+jammed gripper and a \SI{\pm10}{\percent} thrust-map error; four acceptance
+criteria inherited from an earlier pre-specification were fixed during the run
+and all met. All $72$ nominal releases were confirmed, none early and none during
+carry, \SI{2.2}{\second} after physical detachment at the median; the loaded mass
+error was \SI{0.013}{\kg}, the estimate never collapsed in manoeuvre, and the
+estimator solved in \SI{0.3}{\milli\second}. All $24$ loads lost without a
+command were detected and none of $24$ jammed releases was accepted. The thrust
+map bounds the system: \SI{10}{\percent} high, every release was missed and
+ended in a safe hover; \SI{10}{\percent} low, the \SI{0.15}{\kg} payload read as
+absent, the loss watchdog never armed, and with detachment delayed by
+\SI{4}{\second} all $12$ releases were accepted about \SI{3}{\second} before the
+payload left.
 
-All $118$ eligible releases were accepted, \SIrange{2.3}{3.2}{\second} after
-physical detachment. Under delayed detachment the evidence-gated arms never
-accepted a release while the payload was still attached, whereas accepting at
-the command did so in every flight. Running the same confirmation throughout
-carry, however, produced $114$ false acceptances in $20$ of $32$ flights at
-\SI{4}{\meter\per\second}; arming it only after the release command removed them
-without lengthening the delay. Replacing the mass evidence with a force balance
-from rotor speeds and the inertial unit, enabled by the command or by a watchdog
-armed on airborne load, produced no false acceptance in $240$ flights, detected
-$24$ of $24$ loads lost without a command and accepted none of $24$ jammed
-releases; a \SI{10}{\percent} error in the thrust map it shares with the
-estimator, however, either missed every release or disabled the watchdog for the
-lighter payload. In loaded hover the mass estimate was within
-\SI{0.5}{\percent} of truth, but in sustained manoeuvre at
-\SI{4}{\meter\per\second} it was biased low and periodically collapsed toward the
-bare airframe. A residual specific force improved tracking without reducing that
-bias; against a fixed-parameter controller the interface reduced loaded tracking
-error, but estimating the mass gave no consistent benefit over the residual
-alone.
+Historical batches with the full-state estimator show how the design was
+reached. In a frozen cohort of $120$ flights the mass estimate was within
+\SI{0.5}{\percent} in loaded hover but collapsed periodically in manoeuvre at
+\SI{4}{\meter\per\second}, and confirming the release on that mass evidence
+throughout carry produced $114$ false acceptances in $20$ of $32$ flights;
+arming it only after the release command removed them. A campaign of $312$
+flights introduced the force-balance rule, which removed them without that
+restriction, and showed that estimating the mass gave no consistent tracking
+benefit over a residual specific force alone.
 
 The evidence is from simulation only, and no hardware validity is claimed. Both
 the estimator and the release detector depend on thrust-map calibration, and

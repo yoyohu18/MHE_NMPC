@@ -23,7 +23,7 @@ Gauss--Newton Hessian approximations and real-time iteration schemes are widely
 used to make NMPC practical \cite{diehl2005rti}. CasADi provides symbolic
 differentiation and a high-level optimisation interface
 \cite{andersson2019casadi}; acados generates efficient optimal-control solvers
-around tailored SQP and QP components \cite{acados,verschueren2022acados}, with
+around tailored SQP and QP components \cite{acados}, with
 HPIPM \cite{hpipm} as the quadratic subproblem solver.
 
 \section{Quadrotor NMPC}
@@ -55,7 +55,7 @@ schemes excite the plant to learn \cite{aswani2013learning,hewing2020learning}.
 
 Learning-based MPC extends this using Gaussian processes, neural networks or
 learned residual models. Data-driven MPC for quadrotors can compensate complex
-aerodynamic effects \cite{torrente2021datadriven,torrente2021}, and neural
+aerodynamic effects \cite{torrente2021}, and neural
 approximations can reduce online computation \cite{salzmann2023neural}; broader
 surveys of learning for control under safety constraints are available
 \cite{brunke}. Those methods are valuable when the uncertainty is poorly
@@ -85,7 +85,7 @@ changes violate the local linearisation assumption. MHE estimates a window of
 past states and disturbances by solving a constrained optimisation; it can impose
 bounds such as a physically admissible mass interval and can attribute residuals
 using the same nonlinear model as the controller
-\cite{rawlings2017mpc,rao2003mhe,rao2003}. Recent work learns the MHE weights
+\cite{rawlings2017mpc,rao2003}. Recent work learns the MHE weights
 themselves \cite{neuromhe}, which is the principled version of the stage-weight
 question that Chapter~\ref{ch:framework} settles negatively for this problem.
 
@@ -128,11 +128,23 @@ Chapter~\ref{ch:framework} reports why that structure was retired for this
 problem. A collective-thrust residual cannot distinguish a payload change from a
 trajectory-mode change, a sustained vertical gust, or an aggressive manoeuvre,
 because all of them move the same scalar. Any decision resting on that signal
-alone inherits the ambiguity. The deployed design does not detect the change at
-all: it waits for the estimated mass itself to persist at the bare-airframe value,
-and accepts both the delay and the dependence on mass accuracy that this implies.
-A formal comparison against a CUSUM detector on the same signals, under a matched
-false-alarm constraint, is not performed and is listed among the gaps.
+alone inherits the ambiguity. Two replacements were evaluated, and they should be
+kept apart. The \emph{historical mass-evidence rule}, used in the cohort of
+Chapter~\ref{ch:evaluation}, did not detect the change at all: it waited for the
+estimated mass itself to persist at the bare-airframe value, and accepted both
+the delay and the dependence on mass accuracy that this implies. The
+\emph{deployed force-balance rule} takes the evidence from outside the
+estimator: the composite mass implied by the thrust reconstructed from rotor
+speeds and the specific force measured by the inertial unit, tested for
+persistence once a release command or a watchdog armed on airborne load opens
+the test. The first answers whether the \emph{estimate} has returned to the
+empty airframe; the second whether the \emph{measured force balance} has, and
+only the second is independent of the estimator's accuracy in manoeuvre. Neither
+is a change detector in the sense of \cite{basseville1993}, and neither has been
+compared with one: a CUSUM or generalised-likelihood-ratio detector on the same
+signals, tuned to a matched false-alarm rate, is the natural baseline, and its
+absence is one of the principal limitations of this dissertation
+(Section~\ref{sec:eval:missing}).
 
 \section{Positioning and Research Gap}\label{sec:lit:gap}
 

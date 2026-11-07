@@ -2,6 +2,8 @@
 %% Rewritten 2026-10-30 for the 14-state mass-only interface; 2026-11-05: the
 %% deployed estimator is the reduced velocity--mass MHE (contribution 2).
 %% 2026-11-06: contribution 3 leads with the deployed force-balance release rule.
+%% 2026-11-06 (review 2): contributions reordered (lifecycle first); the reduced-mass
+%% inertia result is stated as the modelling basis, not as a contribution.
 
 \chapter{Introduction}
 \label{ch:introduction}
@@ -31,7 +33,7 @@ numerically converged optimisation solves the wrong problem.
 This dissertation couples moving horizon estimation with nonlinear model
 predictive control. MHE estimates states and parameters by optimising over a
 recent window of measurements while enforcing the system dynamics and physical
-bounds \cite{rao2003mhe}. Within that window the estimator identifies a single
+bounds \cite{rao2003}. Within that window the estimator identifies a single
 payload-dependent scalar, the composite mass, and from it the controller
 reconstructs every payload-dependent term in its own model.
 
@@ -143,14 +145,35 @@ Chapter~\ref{ch:conclusion}.
 
 \section{Contributions}
 
-The contributions are:
+The contributions lie in the architecture and its evaluation rather than in the
+rigid-body algebra on which they rest. That basis is stated first because the
+rest depends on it: for a payload grasped on the thrust axis, the parallel-axis
+theorem taken about the moving composite centre of mass gives a roll and pitch
+inertia increment equal to the reduced mass times the square of a nominal
+vertical arm, so the composite mass is the only payload quantity to be identified
+online, and the inertia follows from it and vanishes with it, with no event
+needed to remove it (Chapter~\ref{ch:model}). This is a standard result applied
+to the task, not a contribution in its own right. The contributions are:
 \begin{enumerate}
-\item \textbf{A single-degree-of-freedom parameter structure for a centred rigid
-payload.} For a payload grasped on the thrust axis, the roll and pitch inertia
-increment is the reduced mass times the square of a nominal vertical arm, so the
-composite mass is the only payload quantity to be identified online; the inertia
-follows from it and vanishes with it, with no event needed to remove it
-(Chapter~\ref{ch:model}).
+\item \textbf{A continuous estimate-driven controller interface with an
+evidence-confirmed release lifecycle.} One health-gated frame updates the
+controller's prediction model, input baseline and inner-loop scaling
+continuously; release acceptance is a separate decision, taken only on evidence
+that the payload has left. In the deployed form that evidence is a force balance
+of the thrust reconstructed from rotor speeds against the specific force measured
+by the inertial unit, which does not pass through the mass estimate, and it is
+opened by the release command or by a watchdog armed on airborne load. In a
+$180$-flight validation of the deployed system it produced no false acceptance
+during carry, never accepted a release early under a nominal thrust map,
+detected every load lost without a command and accepted no jammed release. Its
+price is the thrust map: when the map under-reads by more than the payload's
+share of the composite mass, a loaded vehicle reads as empty, and a delayed
+release was then accepted before the payload left in every such flight. In the
+historical cohort, the same lifecycle on the estimator's own mass
+evidence was sound only when armed by the release command: run throughout carry,
+it accepted releases that had not happened during high-speed flight
+(Chapter~\ref{ch:framework} and Sections~\ref{sec:eval:deployed},
+\ref{sec:eval:results} and~\ref{sec:eval:campaign}).
 
 \item \textbf{A mass estimator driven by a reconstructed physical input that
 does not integrate the rotational dynamics.} The estimator is fed the thrust
@@ -165,35 +188,29 @@ than the full-state estimator in every nominal flight. The evaluation campaigns
 were flown with that earlier full-state form, which separated the channels more
 weakly by carrying the payload inertia as a parameter lagged by one solve. In a
 paired closed-loop comparison of $96$ flights with everything else fixed, the
-deployed form met every pre-registered acceptance criterion: it lowered the
+deployed form met every pre-specified acceptance criterion: it lowered the
 loaded mass error from \SI{0.035}{\kg} to \SI{0.013}{\kg}, removed the
 manoeuvre-induced collapse of the estimate, solved about ten times faster and
-changed neither tracking nor the lifecycle (Chapters~\ref{ch:model},
+changed neither tracking nor the lifecycle. Replay against an extended Kalman
+filter and simpler estimators on the same inputs shows that this gain comes from
+the model structure --- reconstructed thrust and measured attitude as known
+inputs, no rotational channel --- rather than from the moving-horizon solution,
+which matched a filter on accuracy (Chapters~\ref{ch:model},
 \ref{ch:framework} and Section~\ref{sec:eval:reduced}).
 
-\item \textbf{A continuous estimate-driven controller interface with an
-evidence-confirmed release lifecycle.} One health-gated frame updates the
-controller's prediction model, input baseline and inner-loop scaling
-continuously; release acceptance is a separate decision, taken only on evidence
-that the payload has left. In the deployed form that evidence is a force balance
-of the thrust reconstructed from rotor speeds against the specific force measured
-by the inertial unit, which does not pass through the mass estimate, and it is
-opened by the release command or by a watchdog armed on airborne load. In the
-release campaign it produced no false acceptance during carry, never accepted a
-release while a delayed payload was still attached, detected every load lost
-without a command and accepted no jammed release, at the price of sensitivity to
-the thrust map. In the cohort, the same lifecycle on the estimator's own mass
-evidence was sound only when armed by the release command: run throughout carry,
-it accepted releases that had not happened during high-speed flight
-(Chapter~\ref{ch:framework} and Sections~\ref{sec:eval:results}
-and~\ref{sec:eval:campaign}).
-
 \item \textbf{A software-in-the-loop evaluation with randomised blocks, complete
-reporting, ablations and failure cases.} A frozen cohort of $120$ flights and a
-second frozen campaign of $312$, every flight reported, together with an
+reporting, ablations and failure cases.} A $180$-flight validation of the
+deployed system from a tagged commit, with acceptance criteria inherited from an
+earlier pre-specification; and, as the historical record of how the design was
+reached, a frozen cohort of $120$ flights and a release campaign of $312$, both
+with the full-state estimator, and a paired estimator comparison of $96$. Every
+flight is reported, with the configuration each
+result applies to stated explicitly, together with an
 ablation of the residual specific force and an account of the failure modes --- in particular the
 collapse of the mass estimate under sustained manoeuvre and the false
-acceptances it causes in an always-on lifecycle (Chapter~\ref{ch:evaluation}).
+acceptances it causes in an always-on lifecycle, and, for the deployed system,
+the early acceptance caused by an under-reading thrust map
+(Chapter~\ref{ch:evaluation}).
 \end{enumerate}
 
 \section{Dissertation Organisation}
@@ -207,7 +224,8 @@ mass are developed in full.
 Chapter~\ref{ch:framework} presents the coupled architecture, the numerical form
 of both optimal control problems, the continuous payload interface and the
 release lifecycle. Chapter~\ref{ch:evaluation} describes the implementation and
-reports the frozen experimental campaign, including the conditions under which
+reports the validation of the deployed system and the historical experiments
+that led to it, including the conditions under which
 the interface fails. Chapter~\ref{ch:conclusion} answers the research objectives
 against that evidence and states what remains open.
 

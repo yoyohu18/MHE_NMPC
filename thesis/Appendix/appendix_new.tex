@@ -104,6 +104,43 @@ trigger is active but rarely changes the stage weights (Section~\ref{sec:frame:b
 \bottomrule
 \end{tabularx}
 \end{table}
+
+\section{Identity of the deployed system in the validation campaign}\label{app:deployed-id}
+
+Table~\ref{tab:deployed-id} identifies the code, toolchain and generated solvers
+with which the $180$ flights of Section~\ref{sec:eval:deployed} were flown. The
+toolchain and solver identities were captured at 20:54 on 6 November 2026,
+during the release segment; none of the listed components was rebuilt after the
+campaign started, as their file times show. Solver identities are the first
+$16$ hexadecimal digits of the SHA-256 of the installed files.
+
+\begin{table}[ht]
+\centering
+\caption[Identity of the deployed system in the validation campaign]{Identity
+of the deployed system in the validation campaign, from the versions file
+\texttt{versions\_20261106.txt} in the analysis directory and the
+\texttt{batch\_info.txt} of each segment.}
+\label{tab:deployed-id}
+\small
+\begin{tabularx}{\textwidth}{@{}p{0.27\textwidth} >{\raggedright\arraybackslash}X@{}}
+\toprule
+Code base & mainline (\texttt{MHE\_NMPC}) \\
+Tag / commit & \texttt{deployed-r-armd-180-v1} / \texttt{59236f7fecb0} \\
+Flight-code fingerprint & \texttt{186022e6c95cfa38}, checked before each of the $180$ flights; covers the flight-stack package sources and configuration, worlds and gripper plug-in, launch and stop scripts, the tools they call and the batch driver \\
+Repository head & at the start of the release segment: the tag, no uncommitted change under \texttt{src/} or \texttt{scripts/}; later segments: \texttt{9881e78}, which changes only this dissertation, with four untracked offline analysis scripts in \texttt{scripts/tools/} outside the fingerprint \\
+ROS 2 & Jazzy; \texttt{rclpy} 7.1.11, \texttt{mavros} 2.14.0 \\
+Gazebo & Gazebo Sim 8.11.0 (Harmonic) \\
+PX4 & \texttt{v1.17.0-alpha1-1373-gc0633d89ff-dirty}; binary \texttt{05c4a2a876d724ba} \\
+acados & \texttt{dc6668f85} \\
+Python & 3.12.3; NumPy 1.26.4; CasADi 3.7.2 \\
+Estimator solver (R) & library \texttt{4066ba077b882e0b}; problem description \texttt{0634387011f05db4} \\
+Controller solver & library \texttt{0809ef2083bcfa7c}; problem description \texttt{d5965ff370213bb8} \\
+Schedule seeds & \texttt{20261106001}--\texttt{20261106004} (release, faults, thrust map, thrust map delayed) \\
+Flight data & \texttt{results/batch\_release\_20261106\_201503}, \texttt{batch\_faults\_20261107\_002042}, \texttt{batch\_thrust\_20261107\_030655}, \texttt{batch\_thrust\_low\_d4\_20261107\_055237} \\
+Analysis & \texttt{scripts/tools/campaign\_eval.py}; \texttt{results/campaign\_180\_analysis/} (acceptance criteria, per-flight table, report) \\
+\bottomrule
+\end{tabularx}
+\end{table}
 \end{spacing}
 
 \clearpage

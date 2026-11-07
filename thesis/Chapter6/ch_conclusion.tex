@@ -4,6 +4,9 @@
 %% 2026-11-03: findings reorganised by research objective (answer / evidence /
 %% boundary / not established); future work reduced to four ranked items.
 %% 2026-11-05: release-campaign results (312 flights) added to objectives 3-5.
+%% 2026-11-07: findings led by the 180-flight deployed-system validation
+%% (Section sec:eval:deployed); early confirmation under an under-reading thrust
+%% map with delayed detachment added as a limit; future work re-ranked.
 
 \chapter{Conclusion and Future Work}
 \label{ch:conclusion}
@@ -20,12 +23,15 @@ mass to the translational channel. Chapter~\ref{ch:framework} built a
 moving-horizon estimator driven by a wrench reconstructed from rotor speeds, a
 predictive controller updated continuously from one health-gated estimate, and a
 release lifecycle in which acceptance of a release is gated on evidence --- in
-the deployed form an independent force balance, in the evaluation cohort the
+the deployed form an independent force balance, in the historical cohort the
 estimator's mass evidence. Chapter~\ref{ch:evaluation}
-evaluated the system in PX4/Gazebo software-in-the-loop simulation with a frozen
-cohort of $120$ flight attempts, a smaller frozen ablation and a second frozen
-campaign of $312$ flights. The findings below answer the five research
-objectives against that evidence.
+evaluated the deployed system --- the reduced estimator with the force-balance
+rule --- in a validation campaign of $180$ PX4/Gazebo software-in-the-loop
+flights, and documented how the design was reached with historical batches flown
+with a full-state estimator: a frozen cohort of $120$ flight attempts, a smaller
+frozen ablation, a release campaign of $312$ flights and a paired estimator
+comparison of $96$. The findings below answer the five research objectives
+against that evidence, and say which batch each statement rests on.
 
 \section{Principal Findings}
 
@@ -52,8 +58,17 @@ periodically collapses toward the bare airframe. Both statements describe the
 full-state estimator with which the campaigns were flown. The deployed reduced
 estimator, which does not integrate the rotational dynamics, removes most of
 that bias and the collapse, in replay and in closed loop, at about a tenth of
-the computation.
-\item \textbf{Evidence.} In the frozen cohort the per-flight loaded-hover error
+the computation. The improvement belongs to its model structure --- reconstructed
+thrust and measured attitude as known inputs, no rotational channel --- rather
+than to the moving horizon: replayed on the same flights, an extended Kalman
+filter with that structure was as accurate.
+\item \textbf{Evidence.} In the deployed-system validation the reduced
+estimator's loaded mass error was \SI{0.013}{\kg} at the median over $72$
+nominal releases (\SI{2.7}{\gram} in loaded hover, a figure-eight bias of
+\SI{-0.66}{\percent} at \SI{4}{\meter\per\second}), its estimate never
+collapsed in any flight, it never re-initialised, and it solved in
+\SI{0.31}{\milli\second} at the median (Section~\ref{sec:eval:deployed}). In
+the historical frozen cohort the per-flight loaded-hover error
 lay between \SI{-0.44}{\percent} and \SI{-0.10}{\percent}; the loaded
 figure-eight bias had medians of \SI{-1.0}{\percent} at
 \SI{2}{\meter\per\second} and \SI{-4.1}{\percent} and \SI{-3.3}{\percent} at
@@ -71,15 +86,25 @@ estimator lowered the loaded mass error from \SI{0.035}{\kg} to \SI{0.013}{\kg}
 estimate spent a median \SI{22}{\percent} of the loaded figure-eight below half
 the payload and the reduced estimate none, in any flight. The median solve time
 fell from \SI{2.8}{\milli\second} to \SI{0.3}{\milli\second}. Tracking and the
-lifecycle did not change (Section~\ref{sec:eval:reduced}).
+lifecycle did not change. In replay on the $48$ reduced-estimator flights, the
+extended Kalman filter came within \SI{0.2}{\gram} of the reduced estimator's loaded
+mass error, converging \SI{0.5}{\second} later after lift-off and
+\SI{0.4}{\second} sooner after detachment; the window force balance was
+\SIrange{0.5}{1.6}{\gram} less accurate. Penalising the newest measurement, which
+the flown estimator leaves without cost, shortened its convergence by
+\SIrange{0.2}{0.3}{\second} at unchanged accuracy, and replacing the body-origin
+velocity by the composite-centre velocity changed nothing
+(Section~\ref{sec:eval:reduced}).
 \item \textbf{Boundary.} Simulated rotor speeds are exact and the plant uses the
 thrust law the estimator inverts; the shortened arm; payloads of
 \SIrange{0.15}{0.30}{\kg}.
 \item \textbf{Not established.} The full cause of the collapse; the reduced
 estimator under realistic attitude noise, which the simulator's odometry does not
-exercise; the effect of a thrust-coefficient error, which is known only analytically
-(Section~\ref{sec:eval:thrustcal}); and the advantage of the window seed, whose
-comparison was not run.
+exercise; the effect of a thrust-coefficient error on the actuation side, and of
+an error smaller than \SI{10}{\percent} (Section~\ref{sec:eval:thrustcal});
+whether the moving horizon is needed at all, since the filter baseline was
+compared only in open-loop replay with nominal thrust; and the advantage of the
+window seed, whose comparison was not run.
 \end{itemize}
 
 \paragraph{Objective 3 --- a continuously updated controller.}
@@ -90,8 +115,10 @@ improves tracking but does not improve the mass estimate or change the
 lifecycle. The held inertia floor protects the inner loop through the collapse,
 but for that reason the cohort cannot show the effect of estimate-driven
 inner-loop scheduling on its own.
-\item \textbf{Evidence.} No eligible cohort flight diverged
-(Table~\ref{tab:attempts}). In the $48$-flight ablation the residual reduced
+\item \textbf{Evidence.} None of the $180$ flights of the deployed-system
+validation diverged or logged a controller solve failure, including the jammed,
+lost-load and thrust-map flights (Section~\ref{sec:eval:deployed}). No eligible
+cohort flight diverged (Table~\ref{tab:attempts}). In the $48$-flight ablation the residual reduced
 loaded figure-eight RMSE by \SIrange{22}{31}{\percent} and removed a mean
 vertical sag of up to \SI{44}{\milli\meter}, with no difference in mass bias,
 confirmation delay or carry-phase confirmations
@@ -124,8 +151,20 @@ not, because the mass evidence fails in manoeuvre. With independent
 force-balance evidence, which does not pass through the mass estimate, the rule
 can in addition be enabled by a watchdog armed on airborne load: it then also
 detects a load lost without a command, without false acceptances in carry. That
-rule's weakness is the thrust map, not the manoeuvre.
-\item \textbf{Evidence.} Every eligible release was accepted,
+rule's weakness is the thrust map, not the manoeuvre: when the map under-reads by
+more than the payload's share of the composite mass, a loaded vehicle reads as
+empty, and the rule then accepts a delayed release before the payload has left.
+\item \textbf{Evidence.} In the deployed-system validation the force-balance
+rule confirmed $72$ of $72$ nominal releases, none early, none during carry,
+\SI{2.17}{\second} after physical detachment at the median; it detected $24$ of
+$24$ uncommanded losses, \SI{2.15}{\second} after detachment, and accepted none
+of $24$ jammed releases, each of which ended in a braked hover. With a
+\SI{10}{\percent} over-reading thrust map it missed all $24$ releases and hovered
+safely. With a \SI{10}{\percent} under-reading map the \SI{0.15}{\kg} payload,
+\SI{6.8}{\percent} of the composite mass, read as absent: the loss watchdog never
+armed, and with detachment held \SI{4}{\second} the release was accepted in $12$
+of $12$ flights, \SI{3.1}{\second} before the payload left
+(Section~\ref{sec:eval:deployed}). In the historical cohort every eligible release was accepted,
 \SIrange{2.3}{3.2}{\second} after physical detachment. Under delayed detachment
 the command-triggered arm accepted early in $24$ of $24$ flights, about
 \SI{4}{\second} early, and the evidence-gated arms in none of $47$. The
@@ -133,7 +172,7 @@ always-on rule accepted $114$ releases that had not happened, in $20$ of $32$
 flights at \SI{4}{\meter\per\second}; the command-armed rule accepted none in its
 $23$ flights and confirmed real detachments no later
 (Sections~\ref{sec:eval:completion}--\ref{sec:eval:unsignaled}). In the
-release campaign the force-balance rule accepted no release during carry in any
+historical release campaign the force-balance rule accepted no release during carry in any
 of $240$ flights ($228$ with the watchdog armed), none early in $36$
 delayed-detachment flights, against $36$ of $36$ for command-triggered
 acceptance, and confirmed real detachments \SIrange{1.9}{2.5}{\second} after
@@ -144,34 +183,43 @@ gripper, all of which ended in a braked hover (Section~\ref{sec:eval:campaign}).
 \item \textbf{Boundary.} For the command-armed rule, a release command must
 exist. For both rules, the detachment delay tested was \SI{4}{\second}. The
 force-balance rule assumes a thrust map accurate to better than
-\SI{10}{\percent}: overestimated by that much it missed every release, safely;
-underestimated by as much it read the lighter payload as absent, so that the
-loss watchdog never armed (Section~\ref{sec:eval:camp:thrust}).
+\SI{10}{\percent} and, more precisely, accurate to better than the payload's
+share of the composite mass: overestimated by \SI{10}{\percent} it missed every
+release, safely; underestimated by as much it read the lighter payload as absent,
+so that the loss watchdog never armed and a delayed release was accepted early
+(Sections~\ref{sec:eval:deployed} and~\ref{sec:eval:camp:thrust}). For the
+deployed system this is a calibration requirement on $k_f$, not a tuning
+choice.
 \item \textbf{Not established.} A tracking or survival advantage of
 evidence-gated acceptance --- none was detected, and none was expected, since the
 model's mass follows the estimate in every arm; what the delayed-detachment
 experiment shows is lifecycle correctness. Also not established: uncommanded
 loss under the mass-evidence rules, which was not run; the force-balance rule
-under delayed detachment with a thrust-map error, where it is expected to accept
-early; detection of partial loss; and its performance relative to an optimised
-change detector.
+under delayed detachment with an over-reading map or with the heavier payload,
+and under a thrust-map error smaller than \SI{10}{\percent}; detection of
+partial loss; and its performance relative to an optimised change detector.
 \end{itemize}
 
 \paragraph{Objective 5 --- evaluation and its scope.}
 \begin{itemize}
-\item \textbf{Answer.} The interface was evaluated with randomised blocks,
-complete reporting of every attempt, two targeted ablations and an explicit
-account of its failure modes.
-\item \textbf{Evidence.} $120$ attempts, $118$ eligible, two exclusions both
-explained (Table~\ref{tab:attempts}); a second campaign of $312$ attempts, all
+\item \textbf{Answer.} The deployed system was validated in a campaign of its
+own, from a tagged commit, with randomised rounds, complete reporting and
+acceptance criteria inherited from an earlier pre-specification; the historical
+configuration was evaluated with randomised blocks, complete reporting of every
+attempt, targeted ablations and an explicit account of its failure modes.
+\item \textbf{Evidence.} The validation: $180$ flights, all eligible, none
+rerun, the four inherited acceptance criteria met; the criteria were fixed during
+the run, after $11$ flights, not before it (Section~\ref{sec:eval:dep:accept}).
+The cohort: $120$ attempts, $118$ eligible, two exclusions both
+explained (Table~\ref{tab:attempts}); the historical campaign: $312$ attempts, all
 eligible, with no replacement flight needed (Section~\ref{sec:eval:camp:design});
 the evidence sources and their standing are listed in Table~\ref{tab:evidence}.
 \item \textbf{Boundary.} All system-level evidence is software-in-the-loop.
 \item \textbf{Not established.} Hardware validity; a comparison with
 incremental dynamic inversion or with a change detector under a matched
-false-alarm constraint; and the designed estimator-side thrust-map, partial-loss
-and window-seed experiments, which were not run
-(Section~\ref{sec:eval:notrun}).
+false-alarm constraint; and the designed small thrust-map, partial-loss and
+window-seed experiments, which were not run, and the parts of the thrust-map and
+delayed-detachment crossing that were not flown (Section~\ref{sec:eval:notrun}).
 \end{itemize}
 
 \section{Limitations}
@@ -192,7 +240,30 @@ health. The evaluated configuration includes settings that are not
 the defaults of the campaign code base's experiment entry points, and the results
 are claims about that configuration; in the mainline code base those settings are
 the defaults, and the deployed system differs from the evaluated configuration
-only in its release rule and its estimator (Section~\ref{sec:eval:config}).
+only in its release rule and its estimator (Section~\ref{sec:eval:config}). The
+deployed system was validated in $180$ flights, which cover nominal and delayed
+release, uncommanded loss, a jam and a \SI{\pm10}{\percent} estimation-side
+thrust-map error; its acceptance criteria were fixed during that run, not before
+it. Its decisive limit is the thrust map: under a \SI{10}{\percent}
+under-reading map it cannot tell the lighter payload from none, so the loss
+watchdog does not arm and a delayed release is accepted about \SI{3}{\second}
+before the payload leaves (Section~\ref{sec:eval:deployed}).
+
+Three further limits concern what the evidence can show. The force-balance
+detector was validated in a plant whose thrust follows exactly the static law it
+inverts, with near-ideal rotor speeds and an inertial unit at the body origin;
+rotor-speed noise and latency, accelerometer bias and vibration, the lever arm
+between the inertial unit and the composite centre of mass, induced inflow and
+an actuation-side thrust error were not present, and the thrust-map error was
+applied to the estimation side only. Repeated flights of one cell differ through
+unseeded sensor noise and scheduling, not through randomised physical
+conditions, so the statistical tests describe repeatability in simulation, not
+inference to a fielded vehicle (Section~\ref{sec:eval:stats}). And the release
+rules were compared with each other, never with an optimised change detector at
+a matched false-alarm rate; that is the largest gap for the release question.
+The controller's torque bounds are a surrogate, not the realisable input set,
+and the torque is a virtual input that the autopilot never receives
+(Section~\ref{sec:frame:inputs}).
 
 \section{Future Work}
 
@@ -200,24 +271,40 @@ The following directions are ranked by how much they would change what can be
 claimed.
 
 \begin{enumerate}
-\item \textbf{Manoeuvre-robust mass estimation.} Every weakness of the lifecycle
-follows from the collapse of the loaded estimate in manoeuvre. Calibrating the
+\item \textbf{Release evidence that knows its own calibration.} The
+validation showed that the deployed rule accepts a delayed release early when
+the thrust map under-reads by more than the payload's share of the composite
+mass. A rule that combines $m_{\mathrm{acc}}$ with an explicit bound on the
+thrust-map uncertainty --- refusing to treat a vehicle as empty, or reporting
+that it cannot tell, when the expected payload is smaller than that bound, and
+setting the thresholds of \eqref{eq:gammaacc} from the calibrated uncertainty
+rather than as absolute masses --- should be designed and tested against the
+crossing of thrust-map error and delayed detachment, of which only one corner
+was flown. Evidence insensitive to a constant coefficient error, such as the
+relative step in $m_{\mathrm{acc}}$ against the value recorded after lift, or
+an online calibration of $k_f$ in empty hover, belongs to the same test. None of
+these has been implemented or validated.
+
+\item \textbf{The estimator the deployed system needs.} The extended Kalman
+filter that matched the reduced estimator in replay should be flown in closed
+loop against it, under nominal and erroneous thrust maps, to settle whether a
+moving horizon is needed; the same batch can add the terminal measurement to the
+estimator and replace the controller's torque box by the four per-rotor force
+limits.
+
+\item \textbf{Manoeuvre-robust mass estimation.} The reduced estimator removed
+the collapse that dominated the historical configuration, but a manoeuvre bias of
+about \SI{-0.7}{\percent} remains at \SI{4}{\meter\per\second}, and the
+reference-point correction does not explain it. Calibrating the
 airframe's rotational model --- inertia, rotor-drag moment and torque bias ---
 would reduce the error that reaches the mass through the attitude, and might
 eventually let the rotational channel contribute information instead of error.
 The designed but unrun partial-loss and window-seed experiments belong here: both
 test the estimator rather than the lifecycle.
 
-\item \textbf{Calibration-robust release evidence and health-gated release.}
-The force-balance rule showed that evidence independent of the mass estimate
-removes the carry-phase false acceptances and allows uncommanded loss to be
-detected and flown through. Its remaining weakness is the absolute thrust map.
-Evidence that is insensitive to a constant thrust-coefficient error --- for
-example the relative step in $m_{\mathrm{acc}}$ against the value recorded
-after lift, or an online calibration of $k_f$ in empty hover --- should be
-tested with thrust-map error and delayed detachment crossed, the combination
-the campaign did not fly. The release command should also not be issued while
-the estimator is unhealthy.
+\item \textbf{Health-gated release.} The release command should not be
+issued while the estimator is unhealthy, which the deployed system does not
+enforce.
 
 \item \textbf{Change-detection and rotational baselines.} A comparison against
 CUSUM or a related procedure on the same signals, under a matched false-alarm
@@ -242,14 +329,16 @@ simulated rotor speeds and a supervisor gating every stage.
 The result that generalises beyond this vehicle concerns the relation between an
 estimate and a decision. A continuously estimated mass can drive the model of a
 predictive controller without any event, and doing so kept every flight of the
-frozen cohort stable. Deciding that a payload has gone is a different matter: the
+frozen cohort and of the deployed-system validation stable. Deciding that a payload has gone is a different matter: the
 same estimate that is accurate enough to adapt a model in hover is not reliable
 enough to declare a release in manoeuvre. In this work that decision was safe
 either when the estimate was asked a narrower question --- whether a release that
 has already been commanded has physically happened --- or when it was not asked
 at all, and the release question was put to a measurement that does not depend
 on it. The second form also detects a load lost without a command; it moves the
-weak point from the manoeuvre to the calibration of the thrust map.
+weak point from the manoeuvre to the calibration of the thrust map, and the
+validation located that weak point exactly: an under-reading map larger than the
+payload's share of the vehicle's mass makes a loaded vehicle look empty.
 
 \end{spacing}
 \newpage

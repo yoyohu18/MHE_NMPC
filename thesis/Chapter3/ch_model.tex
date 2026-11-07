@@ -55,9 +55,13 @@ Chapter~\ref{ch:evaluation}.
 
 Two reference frames are used throughout. The world frame $\mathcal{W}$ is
 East--North--Up (ENU), so that gravity acts along $-z$. The body frame
-$\mathcal{B}$ is Front--Left--Up (FLU) with its origin at the geometric centre of
-the rotor disc --- \emph{not} at the centre of mass. The thrust vector passes
-through the body origin by construction.
+$\mathcal{B}$ is Front--Left--Up (FLU) with its origin at the centre of mass of
+the \emph{bare airframe}, on the thrust axis. This is the point to which the
+autopilot's odometry and the inertial unit refer; in the simulated airframe the
+rotor plane lies \SI{0.032}{\meter} above it. The origin is fixed in the body,
+so once a payload is attached it is \emph{not} the centre of mass of the
+composite vehicle (Section~\ref{sec:model:refpoint}). The thrust vector lies on
+the body $z$ axis through the origin.
 
 The state vector and the control input are
 \begin{equation}
@@ -150,9 +154,24 @@ The body rate enters on the \emph{right} of the product because it is resolved
 in the body frame; a world-frame rate would enter on the left. The
 implementation uses the matrix form, which is linear in $\bm\omega$.
 One property of $\Xi$ matters for prediction: $\bm{q}^{\!\top}\Xi(\bm{q})=\bm 0^{\!\top}$
-for every quaternion, so $\bm q^{\!\top}\dot{\bm q}=0$ and the kinematics
-preserve $\lVert\bm q\rVert$ exactly; the controller integrates \eqref{eq:quat}
-across its horizon without renormalising.
+for every quaternion, so $\bm q^{\!\top}\dot{\bm q}=0$ and the \emph{continuous}
+kinematics preserve $\lVert\bm q\rVert$ exactly. The discretised kinematics do
+not: one explicit fourth-order Runge--Kutta step reproduces the exact rotation
+only to fourth order in $\lVert\bm\omega\rVert\Delta t$, and the norm drifts
+by a term of sixth order. The controller integrates \eqref{eq:quat} across its
+horizon without renormalising and evaluates \eqref{eq:Rq} on the unnormalised
+prediction, so a drift would scale the predicted thrust direction by
+$\lVert\bm q\rVert^2$. At the controller's step of \SI{0.05}{\second} the drift
+over the twenty-step horizon is $3\times10^{-11}$ at \SI{1}{\radian\per\second},
+$2\times10^{-8}$ at \SI{3}{\radian\per\second} and $9\times10^{-6}$ at
+\SI{8}{\radian\per\second}. Integrated along the measured body rates of all $96$
+flights of Section~\ref{sec:eval:reduced} (largest component
+\SI{1.6}{\radian\per\second}), the largest drift over any horizon was
+$3\times10^{-10}$. Each solve starts from the measured unit quaternion, so the
+drift does not accumulate between solves, and renormalisation was omitted as
+numerically irrelevant at these rates rather than as unnecessary in principle.
+The estimator, whose attitude is a measured input, normalises it before use
+(Section~\ref{sec:frame:redmodel}).
 
 Neither \eqref{eq:kin} nor \eqref{eq:quat} contains a mass, an inertia, or any
 other physical parameter. \emph{The payload therefore enters the model only
@@ -182,6 +201,46 @@ the drag term gives the vertical force balance
 \end{equation}
 with $\cos\phi\cos\theta$ from \eqref{eq:costheta} and $a_z=\dot v_z$. It is
 used to initialise the estimator (Section~\ref{sec:model:seed}).
+
+\paragraph{Reference point of the translational state.}\label{sec:model:refpoint}
+Equation~\eqref{eq:trans} is Newton's law for the centre of mass of the
+composite body, whereas $\bm p$ and $\bm v$ in \eqref{eq:state} are the position
+and velocity of the body origin, the point the odometry reports. The two
+coincide only for the bare airframe. With a payload attached the composite
+centre of mass lies at the body-frame offset $\rc$ of \eqref{eq:rc}, and the
+transport theorem for a rigid body gives
+\begin{equation}
+\bm v_{C} = \bm v + R(\bm q)\,\bigl(\bm\omega\times\rc\bigr),
+\qquad
+\dot{\bm v}_{C} = \dot{\bm v} + R(\bm q)\,\bigl(\dot{\bm\omega}\times\rc
++ \bm\omega\times(\bm\omega\times\rc)\bigr).
+\label{eq:transport}
+\end{equation}
+Writing \eqref{eq:trans} for the origin therefore omits the second term of
+$\dot{\bm v}_C$. With $\rc=c\,\ev$ and $c=(\mP/\mT)\,r_z$, its body-frame
+components are
+$c\,\bigl[\dot\omega_y+\omega_x\omega_z,\; -\dot\omega_x+\omega_y\omega_z,\;
+-(\omega_x^2+\omega_y^2)\bigr]^{\!\top}$: the horizontal part is driven by the
+angular acceleration and averages out over a manoeuvre, and the part along the
+thrust axis, which is what biases a mass estimate, is quadratic in the roll and
+pitch rates. Both scale with $|c|$, at most \SI{0.034}{\meter} here. On the
+\SI{4}{\meter\per\second} figure-eight of Chapter~\ref{ch:evaluation} the
+measured body rates and angular accelerations had root-mean-square values of
+\SI{0.57}{\radian\per\second} and \SI{0.60}{\radian\per\second\squared}; the
+omitted acceleration then has a root-mean-square value of
+\SI{0.010}{\meter\per\second\squared}, about \SI{0.1}{\percent} of $g$, and a mean
+component along the thrust axis of
+\SI{-2e-4}{\meter\per\second\squared}, about \SI{0.002}{\percent} of $g$ (medians
+over the $24$ flights at that speed in Section~\ref{sec:eval:reduced}). That is two
+to three orders of magnitude below the manoeuvre-induced mass bias reported
+there, and replaying the estimator on the composite-centre velocity of
+\eqref{eq:transport} instead of the origin velocity left its mass error
+unchanged (Section~\ref{sec:eval:reduced}). The model therefore keeps the origin
+as its reference point and omits the transport term; it is listed with the other
+approximations in Section~\ref{sec:model:approx}. The omission is specific to
+this geometry and these manoeuvres: the term grows with $\mP/\mT$, with the arm
+and with the square of the attitude rate, and a longer suspension or aggressive
+attitude manoeuvres would have to model it.
 
 \subsection{Rotational dynamics}\label{sec:model:rot}
 
@@ -678,9 +737,8 @@ for how the results should be read.
 vertical displacement \eqref{eq:rc} of the centre of mass is collinear with the
 thrust, so the thrust produces no moment about the composite centre of mass;
 this is a consequence of geometry, not an omitted term. The increment
-\eqref{eq:reduced} is exact for a rigid pair of point masses, and the yaw
-increment of \eqref{eq:Jdeployed} is exactly zero for a point mass on the yaw
-axis.
+\eqref{eq:reduced} is exact for a rigid pair of point masses, and so is the zero
+yaw increment noted after \eqref{eq:Jdeployed}.
 
 The remaining relations are approximations whose validity depends on the
 operating condition.
@@ -706,6 +764,13 @@ true inertia ratio between $2.15$ and $2.66$ against the modelled $2.34$. Every
 result in this dissertation carries an arm error of this size, unmeasured on a
 per-flight basis.
 
+\paragraph{The translational state refers to the body origin.} Equation
+\eqref{eq:trans} is applied to the body origin rather than to the composite
+centre of mass, which omits the transport acceleration of \eqref{eq:transport}.
+Its thrust-axis component is about \SI{0.002}{\percent} of $g$ in the
+\SI{4}{\meter\per\second} figure-eight, and removing the omission in replay did
+not change the mass error (Section~\ref{sec:model:refpoint}).
+
 \paragraph{The parcel's own inertia is neglected.} The payload is treated as a
 point mass. A box of side \SI{0.15}{\meter} has a central inertia of about
 $0.004\,\mP$, about \SI{2}{\percent} of the roll/pitch increment and the only
@@ -715,10 +780,9 @@ yaw contribution of a centred load.
 airframe inertia $J_{xx}=\SI{0.0142}{\kg\meter\squared}$ is about
 \SI{60}{\percent} of the value in the simulator's model description, and a
 least-squares fit of bare-airframe pitch dynamics recovered an effective inertia
-$1.07$--$1.18$ times the latter; rotor drag acting through the vertical offset of
-the rotor plane produces a velocity-dependent body moment that \eqref{eq:rot}
-does not contain; and a constant torque bias of order \SI{0.01}{\newton\meter}
-appears in the reconstructed torque of an unloaded vehicle. These errors are the
+$1.07$--$1.18$ times the latter; and the rotor-drag moment and the constant
+torque bias of order \SI{0.01}{\newton\meter} described in
+Section~\ref{sec:model:rotchannel} are not modelled. These errors are the
 reason the mass is kept off the rotational channel, and the reason the
 estimator does not integrate that channel at all
 (Section~\ref{sec:model:rotchannel}). They remain in the controller's prediction

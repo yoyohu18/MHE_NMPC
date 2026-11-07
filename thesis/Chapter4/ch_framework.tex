@@ -260,7 +260,14 @@ window.
 
 Stage $j$ pairs the measurement $y_j$ taken at the start of the interval with the
 input averaged over that interval; the newest measurement $y_N$ enters only as
-the terminal node of the trajectory and carries no cost.
+the terminal node of the trajectory and carries no cost. This is an
+implementation convention inherited from the full-state estimator rather than a
+design choice, and it costs the estimate about one sample of delay: the last
+input interval is constrained by the dynamics but not by a measurement. A replay
+with $y_N$ penalised at the weight of the other stages left the accuracy
+unchanged and shortened the convergence after lift-off and after detachment by
+\SIrange{0.2}{0.3}{\second} (Section~\ref{sec:eval:reduced}); the flown
+estimator does not yet include it.
 
 The horizon is $N=20$ stages at $\Delta t=\SI{0.1}{\second}$. The choice is a
 compromise: a longer window averages more measurement noise, but the constraint
@@ -648,6 +655,33 @@ $\overline\tau_z = \SI{0.2}{\newton\meter}$ used in \eqref{eq:nmpc}, the roll
 and pitch bounds are conservative by a factor of four while the yaw bound is
 marginally \emph{optimistic}, which is consistent with the executed yaw torque
 falling well short of the intended one (Section~\ref{sec:eval:platform}).
+
+\paragraph{The torque box is a surrogate constraint.} Two facts limit what the
+bounds of \eqref{eq:nmpc} mean. First, the thrust and torque boxes are
+independent, whereas \eqref{eq:mixerinv} couples them: a combination is
+realisable only if every $F_i$ lies within the per-rotor range
+$[\SI{0.32}{\newton},\,\SI{7.84}{\newton}]$. The roll and pitch bounds remain
+realisable up to \SI{28}{\newton} of collective thrust, but the largest
+realisable yaw moment falls from \SI{0.18}{\newton\meter} at \SI{20}{\newton} to
+\SI{0.13}{\newton\meter} at the \SI{23.2}{\newton} hover thrust with the heavier
+payload and \SI{0.05}{\newton\meter} at \SI{28}{\newton}, and \SI{55}{\percent} of
+the volume of the full box is not realisable by any rotor setting. Second, the
+torque is never sent: the autopilot receives the collective thrust and the
+predicted body rate, and the moment actually produced is the output of its rate
+loop and mixer. The optimiser's torque is a virtual input of the prediction
+model, and its box is a surrogate that keeps the planned rotational
+accelerations within the authority the vehicle roughly has, not a model of the
+actuator limits. In the $48$ deployed-system flights of
+Section~\ref{sec:eval:reduced} the surrogate was rarely active: at
+\SI{4}{\meter\per\second} the planned yaw moment was at its bound in a median
+\SI{2.4}{\percent} of loaded samples --- planned values that, at that thrust, no
+rotor setting realises --- the planned roll and pitch moments at theirs in at
+most \SI{2.3}{\percent}, and the rotors themselves saturated in at most
+\SI{0.12}{\percent}. Replacing the boxes by the four linear constraints
+$F_{\min}\le F_i(T,\bm\tau)\le F_{\max}$ of \eqref{eq:mixerinv}, which are
+polytopic in $u$ and cost nothing structurally in the solver, would make the
+input set exact; it would still constrain a virtual input, and it has not been
+implemented.
 
 \subsection{Solver}\label{sec:frame:solver}
 
@@ -1038,6 +1072,40 @@ by any manoeuvre-induced bias of $\hat m$, and it remains available when the
 estimator's frames are unhealthy. Its weakness is the one the mass channel also
 has: a relative error in $k_f$ scales $m_{\mathrm{acc}}$ one-for-one.
 
+\paragraph{What \eqref{eq:macc} assumes.} The relation $f_z\approx T/m$ holds
+for the specific force at the composite centre of mass, with all external forces
+other than thrust and gravity neglected. An accelerometer at the body-frame
+position $\bm r_I$ measures instead
+\begin{equation}
+\bm f_I = \bm f_C + \dot{\bm\omega}\times(\bm r_I-\rc)
++ \bm\omega\times\bigl(\bm\omega\times(\bm r_I-\rc)\bigr) + \bm b_a + \bm\nu_a ,
+\label{eq:fimu}
+\end{equation}
+with $\bm f_C$ the specific force of the composite centre, $\bm b_a$ a bias and
+$\bm\nu_a$ noise and vibration; $\bm f_C$ itself contains, besides $T\ev/m$, the
+rotor and airframe drag and any induced-inflow change of the thrust. The
+thrust-axis component of the lever-arm terms is
+$-(\omega_x^2+\omega_y^2)(r_{I,z}-c)$ plus products of $\dot{\bm\omega}$ with the
+horizontal offset of the sensor. In simulation the inertial unit sits at the body
+origin, $\bm r_I=\bm 0$, so only the composite offset $c$ of
+Section~\ref{sec:model:refpoint} remains, at about \SI{0.002}{\percent} of $g$,
+and the plant generates thrust by exactly the static law that \eqref{eq:macc}
+inverts. On hardware none of this is given: a bias $b_{a,z}$ shifts
+$m_{\mathrm{acc}}$ by the fraction $-b_{a,z}/g$, so \SI{0.05}{\meter\per\second\squared}
+is \SI{0.5}{\percent}, or \SI{0.01}{\kg}, against a lower score threshold of
+\SI{0.015}{\kg} in \eqref{eq:gammaacc}; a sensor
+\SI{0.05}{\meter} off the thrust axis adds a term proportional to the angular
+acceleration that the \SI{0.5}{\second} low-pass attenuates but does not
+remove; rotor-speed latency relative to the inertial unit turns every thrust
+transient into a transient of $m_{\mathrm{acc}}$; and motor dynamics, induced
+inflow and vertical drag break the static thrust law the detector shares with
+the estimator. Only the thrust-coefficient error was tested
+(Section~\ref{sec:eval:camp:thrust}). Equation~\eqref{eq:macc} is therefore a
+mass measurement for this simulated vehicle, not a generally valid one; on
+hardware it would need the sensor position, a bias estimate in empty hover and a
+time alignment of the two streams before its thresholds mean what they mean
+here.
+
 The evidence score has the form of \eqref{eq:gamma} with the same pair of
 thresholds,
 \begin{equation}
@@ -1088,7 +1156,12 @@ state is unknown and it may be the gripper that failed.
 The release evidence inherits the thrust map. A relative error in $k_f$ scales
 $m_{\mathrm{acc}}$ one-for-one, so a map that reads high makes the vehicle look
 loaded after a real release, and one that reads low can make a light payload look
-absent, so that the watchdog never arms (Section~\ref{sec:eval:camp:thrust}). The
+absent, so that the watchdog never arms (Section~\ref{sec:eval:camp:thrust}). In
+that case the score already reads an empty vehicle when the command opens the
+rule, and under a delayed detachment the release is accepted before the payload
+has left; the deployed-system validation observed exactly this with a
+\SI{10}{\percent} under-reading map and the lighter payload
+(Section~\ref{sec:eval:deployed}). The
 force balance also assumes $f_z\approx T/m$, neglecting the vertical rotor drag.
 And the attach-time floor is ended only by a command or a detected loss, so a
 missed grasp leaves it on the empty airframe until the command

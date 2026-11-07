@@ -17,6 +17,10 @@
 %% force-balance release rule (arm D); switchable arms, the full-state estimator
 %% and the comparison controllers remain in the campaign code base (ros2_ws_HJH).
 %% No experimental number changed.
+%% 2026-11-07: Section sec:eval:deployed added (180-flight deployed-system
+%% validation, R + arm D, mainline tag deployed-r-armd-180-v1, analysis in
+%% results/campaign_180_analysis/, scripts/tools/campaign_eval.py); it is the
+%% primary evidence.  Cohort and 312-flight campaign kept as historical (F).
 
 \chapter{Implementation and Experimental Evaluation}
 \label{ch:evaluation}
@@ -25,17 +29,23 @@
 
 This chapter addresses the fifth research objective: evaluating the complete
 interface in software-in-the-loop simulation and characterising where it fails.
-The evidence comes from five sources of different standing, which are kept apart
-throughout (Section~\ref{sec:eval:evidence}). The primary results are those of a
-frozen, block-randomised cohort of $120$ flights in the evaluated configuration
-of Section~\ref{sec:eval:config}; a smaller frozen batch isolates the residual
-specific force; a second frozen campaign
-of $312$ flights tests an independent force-balance release rule, uncommanded
-loss, a jammed gripper, thrust-map error and fixed and $\mathcal{L}_1$
-baselines (Section~\ref{sec:eval:campaign}); and development flights in
-earlier configurations are used only to show mechanisms. The frozen campaign of
-an earlier revision used a different estimator and eccentric grasps; none of its
-numbers is reused here.
+The evidence comes from sources of different standing, which are kept apart
+throughout (Section~\ref{sec:eval:evidence}). The primary evidence for the
+deployed system --- the reduced estimator with the force-balance release rule
+--- is a campaign of $180$ flights of that system under nominal release,
+delayed detachment, uncommanded loss, a jammed gripper and thrust-map error
+(Section~\ref{sec:eval:deployed}). The remaining sources concern the
+\emph{historical} configuration in which the design was developed, with the
+full-state estimator: a frozen, block-randomised cohort of $120$ flights on the
+estimator's mass evidence (Sections~\ref{sec:eval:cohort}--\ref{sec:eval:results});
+a second frozen campaign of $312$ flights that introduced the force-balance rule
+and compared fixed and $\mathcal{L}_1$ baselines
+(Section~\ref{sec:eval:campaign}); a smaller frozen batch that isolates the
+residual specific force; and the paired comparison of $96$ flights on which the
+reduced estimator was chosen (Section~\ref{sec:eval:reduced}). Development
+flights in earlier configurations are used only to show mechanisms. The frozen
+campaign of an earlier revision used a different estimator and eccentric grasps;
+none of its numbers is reused here.
 
 \section{Platform and Implementation}\label{sec:eval:platform}
 
@@ -158,7 +168,9 @@ $120$ cohort flights, with the first two windows of each flight discarded
 estimator never overran in the cohort, but the worst case used about three
 quarters of it, and because only window aggregates were recorded, the
 per-solve percentiles are not available. The reduced estimator logs every solve;
-its timing is reported with the comparison of Section~\ref{sec:eval:reduced}.
+its timing is reported with the deployed-system validation
+(Section~\ref{sec:eval:deployed}) and the comparison of
+Section~\ref{sec:eval:reduced}.
 
 The deadline is met in simulation. We nevertheless make \emph{no} claim about
 headroom on an onboard computer; that requires measurement on the target
@@ -208,9 +220,12 @@ experiment entry points were switched to the reduced velocity--mass estimator of
 Section~\ref{sec:frame:redmodel}. Every flight of
 Sections~\ref{sec:eval:results}--\ref{sec:eval:campaign}, of the ablations other
 than Section~\ref{sec:eval:reduced}, and of the failure-mode analysis was flown
-with the full-state estimator; those results describe the system as evaluated, not
-the deployed estimator. The evidence for the replacement is
-Section~\ref{sec:eval:reduced}. Results that depend on the estimator's model ---
+with the full-state estimator from the campaign code base; those results
+describe the historical configuration, not the deployed estimator. The
+exceptions are the R arm of Section~\ref{sec:eval:reduced} and the $180$ flights
+of the deployed-system validation (Section~\ref{sec:eval:deployed}); the latter
+were flown with the deployed system itself, from the mainline code base. The
+evidence for the replacement is Section~\ref{sec:eval:reduced}. Results that depend on the estimator's model ---
 the mass bias and its manoeuvre-induced collapse in particular --- should not be
 transferred to the reduced estimator without that evidence.
 
@@ -306,9 +321,355 @@ and an acceptance with no command outstanding did not reset the residual
 $\hat{\bm d}$. The release arms of Section~\ref{sec:eval:arms} are built on this
 lifecycle.
 
+\section{Deployed-System Validation}\label{sec:eval:deployed}
+
+This section is the primary evidence for the system of
+Chapters~\ref{ch:model} and~\ref{ch:framework} as deployed: the reduced
+velocity--mass estimator R with the force-balance release rule (arm~D), and the
+controller, residual specific force, inertia floor, alignment and lifecycle
+settings of Section~\ref{sec:eval:config}, run from the mainline code base
+(Section~\ref{sec:eval:defaults}). A campaign of $180$ flights repeats with
+that system the release, fault and thrust-map experiments that the historical
+release campaign of Section~\ref{sec:eval:campaign} flew with the full-state
+estimator, and adds the combination that campaign did not fly: an
+under-reading thrust map with delayed detachment. It is a separate batch, from a
+different code base and on different days. It is not paired with, and not pooled
+with, any other result of this chapter; where its results are set beside those
+of the historical campaign, the comparison is descriptive.
+
+\subsection{Design and execution}\label{sec:eval:dep:design}
+
+The campaign uses four conditions: c1, \SI{0.15}{\kg} at
+\SI{2}{\meter\per\second}; c2, \SI{0.15}{\kg} at \SI{4}{\meter\per\second};
+c3, \SI{0.30}{\kg} at \SI{4}{\meter\per\second}; and c4, \SI{0.30}{\kg} at
+\SI{2}{\meter\per\second}. Trajectory, grasp and release phase are those of
+Section~\ref{sec:eval:params}. It has four segments
+(Table~\ref{tab:dep-design}). Within each round every cell of a segment is flown
+once, in an order drawn from the segment's seed, and the whole schedule was
+written before the segment's first flight.
+
+\begin{table}[ht]
+\centering
+\caption[Design of the deployed-system validation]{Design of the
+deployed-system validation. d0: detachment at the command; d4: detachment held
+\SI{4}{\second} after the command. Gain: thrust-map gain on the estimation
+side (see text).}
+\label{tab:dep-design}
+\small
+\begin{tabularx}{\textwidth}{@{}l c >{\raggedright\arraybackslash}X c@{}}
+\toprule
+\textbf{Segment} & \textbf{Flights} & \textbf{Factors} & \textbf{Seed} \\
+\midrule
+Release & 72 & d0 / d4 $\times$ c1--c4 $\times$ 9 rounds & 20261106001 \\
+Faults & 48 & uncommanded loss / jammed gripper $\times$ c1--c4 $\times$ 6 rounds & 20261106002 \\
+Thrust map & 48 & gain $0.90$ / $1.10$ $\times$ c1--c4 $\times$ 6 rounds; d0 & 20261106003 \\
+Thrust map, delayed & 12 & gain $0.90$ $\times$ c1, c2 (\SI{0.15}{\kg}) $\times$ 6 rounds; d4 & 20261106004 \\
+\midrule
+Total & 180 & & \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+The thrust-map gain has the meaning it had in the historical campaign
+(Section~\ref{sec:eval:camp:design}): it scales the thrust reconstructed from
+rotor speeds in the estimator's thrust input and in the force-balance detector
+\eqref{eq:macc}. The thrust used by the residual specific force, the
+thrust-to-throttle map, the actuator envelope and the plant's rotor
+coefficient keep the nominal $k_f$, so the error reaches the control input only
+through the mass estimate. An uncommanded loss detaches the payload at the
+release phase with no command and no notification; a jammed gripper receives
+the normal command and never releases.
+
+The four segments were flown back to back, from 20:15 on 6 November to 06:33 on
+7 November 2026. The flight code was frozen at tag
+\texttt{deployed-r-armd-180-v1} (commit \texttt{59236f7}) of the mainline code
+base. A fingerprint of the flight-stack sources and configuration, the launch and
+stop scripts and the batch driver was checked before every flight and was
+\texttt{186022e6c95cfa38} throughout. During the release segment a commit that
+changed only the sources of this dissertation (\texttt{9881e78}) moved the
+repository head, so the three later segments record that commit instead of the
+tag; the unchanged fingerprint shows that the flight code was the same. The
+toolchain and solver identities are listed in Appendix~\ref{app:deployed-id}.
+Eligibility and reruns followed rules written into the batch driver before the
+first flight: only an infrastructure failure --- stack not started, logs
+missing, configuration not matching the schedule, physical attachment failed, or
+no trigger before the timeout --- would have been rerun, once, with the original
+flight kept in the record. Divergence, solver failure, early or missed
+confirmation and \textsc{unresolved} are outcomes. All $180$ flights attached
+and were eligible, and none was rerun. A six-flight smoke batch, one flight per
+path, preceded the campaign to check the driver and the logs; it is not part of
+the results.
+
+Repeated flights of a cell receive no seeded random input. They differ through
+the simulator's unseeded sensor noise and through the timing jitter of the
+simulation step and of the multi-process stack
+(Section~\ref{sec:eval:stats}). Intervals therefore describe the
+repeat-to-repeat variation of this simulation stack on this machine, not a
+population of real flights. No significance test is made in this section, so
+no correction for multiple comparisons arises.
+
+\subsection{Acceptance criteria}\label{sec:eval:dep:accept}
+
+The campaign had no pre-registration of its own. Its four acceptance criteria
+were inherited verbatim from the pre-specification of 5~November~2026 for the
+comparison of F and R (Section~\ref{sec:eval:reduced}), namely items 1, 2, 9 and
+10, the items that concern R alone, with the parts that require a comparison
+with F removed. They were fixed during the run: they were written to the
+campaign's analysis directory after $11$ of the $180$ flights, when only the
+terminal-state lines of those $11$ flights in the campaign log had been seen and
+no summary had been opened, and before the three later segments started. They
+were not changed afterwards. Item~8 of the earlier specification (no runs of
+non-zero solver status and no re-initialisation under a \SI{-10}{\percent}
+thrust map) was not adopted, and the corresponding observations are reported
+descriptively below. Every other result in this section is descriptive.
+
+\begin{table}[ht]
+\centering
+\caption[Acceptance criteria of the deployed-system validation]{Acceptance
+criteria of the deployed-system validation, inherited from items 1, 2, 9 and 10
+of the pre-specified F/R comparison and fixed after $11$ of $180$ flights.
+Events: flights violating the criterion. CP: upper limit of the two-sided
+\SI{95}{\percent} Clopper--Pearson interval for the event rate.}
+\label{tab:dep-accept}
+\small
+\begin{tabularx}{\textwidth}{@{}l >{\raggedright\arraybackslash}X l c c c@{}}
+\toprule
+& \textbf{Criterion} & \textbf{Scope} & \textbf{Events} & \textbf{CP} & \textbf{Met} \\
+\midrule
+A1 & No divergence (more than $100$ controller solve failures) in any phase & release & 0/72 & 0.050 & yes \\
+A2 & No estimator re-initialisation after five consecutive solve failures & release & 0/72 & 0.050 & yes \\
+A3 & Controller model mass constant throughout every interval in which the estimate was unhealthy or stale & all & 0/180 & 0.020 & yes \\
+A4 & After \textsc{unresolved}: speed below \SI{0.5}{\meter\per\second} from \SI{5}{\second} later, and no divergence & every \textsc{unresolved} & 0/48 & 0.074 & yes \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+All four criteria were met (Table~\ref{tab:dep-accept}). Unlike the F/R
+comparison, in which no flight entered \textsc{unresolved}, this campaign
+exercised A4 in $48$ flights: the $24$ jammed releases and the $24$ flights with
+an over-reading thrust map.
+
+\subsection{Outcomes}\label{sec:eval:dep:outcomes}
+
+\begin{table}[ht]
+\centering
+\caption[Binary outcomes of the deployed-system validation]{Binary outcomes of
+the deployed-system validation, all $180$ eligible flights. Early: release
+accepted before the physical detachment (for loss: loss declared before it).
+Carry: release accepted during loaded carry before any command or injected
+loss. Armed: loss watchdog armed before the command or the loss. Two-sided
+\SI{95}{\percent} Clopper--Pearson intervals: $n/n$ has lower limits $0.90$,
+$0.86$ and $0.74$ for $n=36$, $24$ and $12$; $0/n$ has upper limits $0.10$,
+$0.14$ and $0.26$. No flight diverged, logged a controller solve failure, ended
+an estimator solve with non-zero status or re-initialised the estimator.}
+\label{tab:dep-binary}
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}l c c c c c c c@{}}
+\toprule
+\textbf{Cell} & $n$ & \textbf{Confirmed} & \textbf{Early} & \textbf{\textsc{Unresolved}} & \textbf{Carry} & \textbf{Armed} & \textbf{Loss detected} \\
+\midrule
+Release, d0            & 36 & 36/36 & 0/36  & 0/36  & 0/36 & 36/36 & --- \\
+Release, d4            & 36 & 36/36 & 0/36  & 0/36  & 0/36 & 36/36 & --- \\
+Uncommanded loss       & 24 & ---   & 0/24  & 0/24  & 0/24 & 24/24 & 24/24 \\
+Jammed gripper         & 24 & 0/24  & ---   & 24/24 & 0/24 & 24/24 & --- \\
+Gain $0.90$, d0        & 24 & 24/24 & 0/24  & 0/24  & 0/24 & 12/24 & --- \\
+Gain $1.10$, d0        & 24 & 0/24  & ---   & 24/24 & 0/24 & 24/24 & --- \\
+Gain $0.90$, d4, \SI{0.15}{\kg} & 12 & 12/12 & \textbf{12/12} & 0/12 & 0/12 & 0/12 & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[ht]
+\centering
+\caption[Continuous results of nominal release in the deployed system]{Nominal
+release in the deployed system, all $72$ flights of the release segment (d0 and
+d4 pooled; the delay from detachment did not differ between them). Median
+[minimum, maximum] over flights; medians only by speed. Mass windows: loaded, from \SI{5}{\second}
+after lift to the command; post-release, from \SI{5}{\second} after detachment
+to the end of the flight, as in Table~\ref{tab:fr-prereg}; hover and
+figure-eight, and the collapse fraction, as in Section~\ref{sec:eval:metrics}. Position RMSE: loaded from \SI{5}{\second} into the
+figure-eight to the command, post-release from detachment to \SI{25}{\second}
+after it. Yaw at bound: share of loaded samples with the yaw torque at its box
+limit. Solve times are per-flight percentiles; the controller's is sampled
+(below). Except for the confirmation delay, these metrics were defined after the
+campaign started and are exploratory.}
+\label{tab:dep-release}
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}l c c c@{}}
+\toprule
+\textbf{Metric} & \textbf{All ($n=72$)} & \textbf{\SI{2}{\meter\per\second} ($n=36$)} & \textbf{\SI{4}{\meter\per\second} ($n=36$)} \\
+\midrule
+Confirmation after detachment [s] & 2.17 [1.86, 2.52] & 2.30 & 2.10 \\
+Loaded mass MAE [kg]              & 0.0127 [0.0069, 0.0259] & 0.0094 & 0.0153 \\
+Loaded-hover mass MAE [kg]        & 0.0027 [0.0008, 0.0036] & 0.0026 & 0.0027 \\
+Figure-eight mass MAE [kg]        & 0.0136 [0.0070, 0.0289] & 0.0099 & 0.0166 \\
+Figure-eight mass bias [\%]       & $-0.58$ [$-1.34$, $-0.28$] & $-0.41$ & $-0.66$ \\
+Collapse fraction                 & 0 [0, 0] & 0 & 0 \\
+Post-release mass MAE [kg]        & 0.0091 [0.0048, 0.0171] & 0.0067 & 0.0103 \\
+Loaded RMSE [m]                   & 0.069 [0.024, 0.134] & 0.030 & 0.113 \\
+Post-release RMSE [m]             & 0.062 [0.021, 0.127] & 0.033 & 0.102 \\
+Post-release peak error [m]       & 0.141 [0.062, 0.429] & 0.124 & 0.179 \\
+Yaw torque at bound, loaded [\%]  & 0.9 [0, 2.9] & 0 & 2.5 \\
+Estimator solve P50 / P99 [ms]    & 0.31 / 0.37 & 0.25 / 0.35 & 0.35 / 0.39 \\
+Estimator solve maximum [ms]      & 0.41 [0.36, 2.28] & 0.38 & 0.44 \\
+Controller solve median, sampled [ms] & 1.7 [1.5, 2.1] & 1.5 & 2.0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Nominal release.} Every one of the $72$ releases was confirmed
+($[0.950, 1]$), none before the payload left, none was missed and none ended in
+\textsc{unresolved}; no release was accepted during loaded carry, although the
+loss watchdog was armed in every flight before the command, a median of
+\SI{3.2}{\second} after the start of the lift. After every release the
+controller's model returned to the bare airframe. The confirmation came
+\SI{2.17}{\second} after physical detachment at the median, from
+\SI{1.86}{\second} to \SI{2.52}{\second} (Table~\ref{tab:dep-release}); under
+delayed detachment it came \SI{6.20}{\second} after the command and the same
+\SI{2.17}{\second} after detachment, so holding the joint changed nothing but
+the wait. The delay depends mainly on the payload, \SI{2.04}{\second} for
+\SI{0.15}{\kg} and \SI{2.40}{\second} for \SI{0.30}{\kg} at the median, as in
+the historical campaign.
+
+The mass estimate was accurate in loaded hover (median MAE \SI{2.7}{\gram}) and
+in manoeuvre was biased low by \SI{0.66}{\percent} at the median at
+\SI{4}{\meter\per\second}. It did not collapse: in no flight did the estimated
+payload fall below half the true payload during the loaded figure-eight. The
+estimate returned to within \SI{0.03}{\kg} of the empty value
+\SI{1.7}{\second} after detachment at the median. Loaded tracking error was
+about \SI{0.03}{\meter} at \SI{2}{\meter\per\second} and \SI{0.11}{\meter} at
+\SI{4}{\meter\per\second}, and the mean vertical error in the figure-eight was
+\SI{0.6}{\milli\meter}. The collective thrust never reached its bound; the yaw
+torque was at its box limit in \SI{2.5}{\percent} of loaded samples at
+\SI{4}{\meter\per\second}, and no motor command saturated in more than
+\SI{1.2}{\percent} of loaded samples in any flight of the campaign. These
+figures are of the same order as those of the $48$ R flights of the F/R
+comparison; the two batches come from different code bases and are not compared
+statistically.
+
+\paragraph{Faults.} Every uncommanded loss was detected ($24/24$,
+$[0.86, 1]$), \SI{2.15}{\second} after detachment at the median
+(\SIrange{1.94}{2.50}{\second}), never before it; in every case the payload
+geometry was zeroed, the inner-loop scale returned to the bare airframe, no
+planned release was issued afterwards and no flight diverged. No jammed release
+was accepted ($0/24$, $[0, 0.14]$) and the payload model was never cleared;
+every jam reached \textsc{unresolved}, braked and hovered, with a largest speed
+from \SI{5}{\second} after \textsc{unresolved} of \SI{0.11}{\meter\per\second}
+at the median (\SIrange{0.05}{0.18}{\meter\per\second}).
+
+\paragraph{Over-reading thrust map ($1.10$).} The empty vehicle read
+\SI{9.8}{\percent} heavy after release, so no release was confirmed ($0/24$);
+all $24$ flights reached \textsc{unresolved} and hovered safely, with a largest
+speed from \SI{5}{\second} after it of \SI{0.11}{\meter\per\second} at the
+median (\SIrange{0.05}{0.18}{\meter\per\second}). The estimator's mass was
+\SI{9.4}{\percent} high in loaded carry. With the heavier payload this put the
+estimate above the health band for \SIrange{94}{95}{\percent} of loaded flight, and the
+controller held its last accepted model mass throughout (criterion A3); with the
+lighter payload the estimate stayed inside the band and was used. The loss
+watchdog armed in every flight, so an uncommanded loss would also have gone
+undetected; that was not flown.
+
+\paragraph{Under-reading thrust map ($0.90$) with immediate detachment.} Every
+release was confirmed ($24/24$), none early, \SI{1.20}{\second} after the command
+at the median: \SI{0.95}{\second} with the lighter payload and
+\SI{1.50}{\second} to \SI{1.55}{\second} with the heavier. The force-balance mass
+read \SI{10.45}{\percent} low. With the lighter payload the loaded vehicle
+therefore read as empty, and the loss watchdog never armed ($0/12$): protection
+against uncommanded loss was silently absent. The estimator's mass was
+\SI{10.5}{\percent} low, a loaded MAE of \SI{0.24}{\kg}. The estimate, which
+the controller uses whenever it is healthy, therefore lay below the bare airframe
+with the lighter payload and recognised only about a sixth of the heavier one;
+the estimator ended no solve
+with non-zero status and never re-initialised. No flight diverged.
+
+\paragraph{Under-reading thrust map with delayed detachment: early
+confirmation.} In all $12$ flights with gain $0.90$, the lighter payload and
+detachment held for \SI{4}{\second}, the release was accepted while the payload
+was still attached ($12/12$, $[0.74, 1]$): \SI{0.95}{\second} after the command
+and \SI{3.09}{\second} before the physical detachment at the median
+(\SIrange{3.08}{3.13}{\second}). The dual enabling still prevented any
+acceptance during carry ($0/12$), because the watchdog never armed and the rule
+consumed the evidence only once the command was pending. The mechanism follows
+from \eqref{eq:macc}--\eqref{eq:gammaacc} and is confirmed by the logged values.
+With gain $1+\epsilon$ the loaded vehicle reads
+$m_{\mathrm{acc}}=(1+\epsilon)(\mB+\mP)$, and the score treats it as empty when
+$m_{\mathrm{acc}}-\mB\le\SI{0.015}{\kg}$, that is for every payload with
+\begin{equation}
+\mP \le \frac{\mB+0.015}{1+\epsilon}-\mB ,
+\label{eq:depempty}
+\end{equation}
+which is \SI{0.25}{\kg} at $\epsilon=-0.10$. The \SI{0.15}{\kg} payload is
+\SI{6.8}{\percent} of the composite mass, less than the \SI{10.4}{\percent}
+under-reading measured in these flights, so the loaded reading,
+\SI{1.98}{\kg}, lay below the bare-airframe mass itself. The score was at the
+empty level throughout carry, the watchdog had no evidence of load to arm on,
+and when the command opened the rule the only thing left to wait for was the
+\SI{1}{\second} persistence hold. Under the same error the payload is read
+clearly as loaded ($m_{\mathrm{acc}}-\mB\ge\SI{0.060}{\kg}$) only above
+about \SI{0.30}{\kg}, which is why the heavier payload, just at that limit, armed the watchdog in all $12$
+of its gain-$0.90$ flights, but later than nominally (\SI{4.4}{\second} against
+\SI{3.2}{\second} after the start of the lift). This is a working limit of the
+deployed system: with an under-reading thrust map the force balance cannot tell
+a light payload from none, and under delayed detachment the system then
+declares a delivery complete, and resets the residual specific force, while the
+payload is still on the hook. In these flights the controller's model already
+held a mass at or just below the bare airframe, and the vehicle neither diverged nor lost the
+track (post-release peak error \SI{0.10}{\meter} at the median); the error is in
+the lifecycle. The rule is correct only while the thrust map is accurate to
+better than the payload's share of the composite mass, and the
+\SI{0.015}{\kg} threshold must be read against that calibration requirement.
+
+\paragraph{Real time.} The reduced estimator logs every solve. Its per-flight
+median, 95th and 99th percentiles and maximum were $0.31$, $0.35$, $0.37$ and
+\SI{0.41}{\milli\second} at the median over the release flights,
+and the largest single solve in the campaign took \SI{2.28}{\milli\second},
+\SI{2.3}{\percent} of the \SI{100}{\milli\second} period. The controller's solve
+time is recorded only in sampled diagnostic lines at \SI{0.1}{\milli\second}
+resolution; its per-flight median was \SI{1.7}{\milli\second}
+(\SI{1.5}{\milli\second} at \SI{2}{\meter\per\second},
+\SI{2.0}{\milli\second} at \SI{4}{\meter\per\second}). Its 99th percentile,
+maximum and deadline overruns cannot be obtained from these logs and are not
+reported.
+
+\subsection{Relation to the historical campaign}\label{sec:eval:dep:history}
+
+The historical release campaign (Section~\ref{sec:eval:campaign}) flew the same
+release rule with the full-state estimator, from the campaign code base. Set
+side by side, descriptively, the lifecycle results agree: confirmation
+\SIrange{1.86}{2.52}{\second} after detachment here against
+\SIrange{1.90}{2.51}{\second} there, no early acceptance under nominal thrust,
+every uncommanded loss detected and no jammed release accepted, the same
+missed releases with the over-reading map and the same unarmed watchdog with the
+lighter payload and the under-reading map. That is expected, because rule~D
+does not read the mass estimate. What differs is the estimator: here the loaded
+estimate never collapsed, where the full-state estimate did at
+\SI{4}{\meter\per\second}. The early confirmation under an under-reading map
+with delayed detachment, predicted but not flown in the historical campaign, is
+observed here for the first time.
+
+\subsection{Scope}\label{sec:eval:dep:scope}
+
+The campaign shares the boundaries of every simulation result in this chapter:
+one airframe and gripper geometry, centred grasps, no wind, a plant that
+generates thrust with the static law the estimator and the detector invert, and
+an inertial unit at the body origin (Section~\ref{sec:frame:accdet}). The
+thrust-map error was applied on the estimation side only and at
+\SI{\pm10}{\percent} only. Delayed detachment was combined with the
+under-reading map for the lighter payload only; the heavier payload, the
+over-reading map and smaller errors were not flown with delayed detachment, and
+uncommanded loss was not flown with a thrust-map error. Zero counts are bounded
+by the cell sizes in Table~\ref{tab:dep-binary}. The acceptance criteria were
+fixed during the run, not before it, as stated above. The data, per-flight table
+and report are in \texttt{results/campaign\_180\_analysis/} of the mainline code
+base, and Section~\ref{sec:eval:repro} gives the command that reproduces the
+campaign.
+
 \section{Experimental Questions and Hypotheses}\label{sec:eval:design}
 
-The evaluation is organised around five questions. For each, the design of
+The historical cohort, with the full-state estimator and the mass-evidence
+lifecycle, is organised around five questions. For each, the design of
 Chapters~\ref{ch:model} and~\ref{ch:framework} implies an expected outcome,
 stated here so that the results can be read against it.
 \begin{enumerate}
@@ -434,9 +795,11 @@ exactly the cases most worth reporting.
 \subsection{Sources of evidence}\label{sec:eval:evidence}
 
 Table~\ref{tab:evidence} lists every source of evidence used in this chapter.
-Only the first row supports the primary results of Section~\ref{sec:eval:results};
-the second, a frozen campaign of the same standing, is analysed on its own in
-Section~\ref{sec:eval:campaign} and never pooled with the first. The residual ablation
+The first row, the deployed-system validation, is the primary evidence for the
+system as deployed (Section~\ref{sec:eval:deployed}). The frozen cohort supports
+the historical results of Section~\ref{sec:eval:results}; the historical
+release campaign, of the same standing, is analysed on its own in
+Section~\ref{sec:eval:campaign}, and no two of these batches are pooled. The residual ablation
 answers one question in one configuration; the horizontal-offset ablation
 was run in an earlier, eccentric configuration; and development flights are
 cited only for mechanisms, never pooled with frozen results or used to estimate
@@ -444,22 +807,45 @@ an effect size.
 
 \begin{table}[ht]
 \centering
-\caption{Sources of evidence in this chapter, in decreasing order of standing.}
+\caption[Sources of evidence and the configuration each one tests]{Sources of
+evidence in this chapter, in decreasing order of standing, with the estimator
+and release rule each was flown with. F: full-state estimator of
+Section~\ref{sec:model:mhe}; R: reduced estimator of the deployed system. Release
+rules: A, accept at the command; B, C, estimator mass evidence (always-on,
+command-armed); D, force balance with loss watchdog.}
 \label{tab:evidence}
 \small
-\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{0.20\textwidth} >{\raggedright\arraybackslash}p{0.19\textwidth} >{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}p{0.10\textwidth}@{}}
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{0.17\textwidth} >{\raggedright\arraybackslash}p{0.12\textwidth} c c >{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}p{0.07\textwidth}@{}}
 \toprule
-\textbf{Source} & \textbf{Flights} & \textbf{Configuration and use} & \textbf{Section} \\
+\textbf{Source} & \textbf{Flights} & \textbf{Est.} & \textbf{Rule} & \textbf{Use} & \textbf{Sec.} \\
 \midrule
-Frozen cohort & 120 attempted, 118 eligible & evaluated configuration; arms A/B/C; d0 and d4; three conditions; primary results & \ref{sec:eval:results} \\
-Release campaign & 312 attempted, 312 eligible & evaluated configuration with the force-balance rule (arm D); four experiments, four conditions; analysed separately from the cohort & \ref{sec:eval:campaign} \\
-Residual ablation & 48 & arm~B, nominal release, residual on/off, three conditions & \ref{sec:eval:l1ablation} \\
-Estimator comparison & 96 (48 pairs) & arm~D, F against R, four conditions, d0 and d4 & \ref{sec:eval:reduced} \\
-Horizontal-offset ablation & 8 (4 + 4) & earlier eccentric configuration, \SI{0.15}{\kg} & \ref{sec:eval:eccablation} \\
-Development flights & single flights to batches of 8 & earlier configurations, changes confounded; mechanisms only & \ref{sec:eval:collapse} \\
+Deployed-system validation & 180 (180 eligible) & R & D & the deployed system, mainline code base; nominal and delayed release, uncommanded loss, jam, thrust-map error & \ref{sec:eval:deployed} \\
+\midrule
+Frozen cohort & 120 (118 eligible) & F & A/B/C & mass-evidence lifecycle; d0 and d4; three conditions; primary results for that rule & \ref{sec:eval:results} \\
+Release campaign & 312 (312 eligible) & F & D & force-balance rule; uncommanded loss, jam, thrust-map error; fixed and $\mathcal{L}_1$ controllers & \ref{sec:eval:campaign} \\
+Residual ablation & 48 & F & B & residual on/off, nominal release & \ref{sec:eval:l1ablation} \\
+Estimator comparison & 96 (48 pairs) & F, R & D & F against R, nominal thrust map, no fault & \ref{sec:eval:reduced} \\
+\quad of which R & 48 + 4 smoke & R & D & the deployed combination in the campaign code base; nominal thrust map, no fault & \ref{sec:eval:reduced} \\
+Horizontal-offset ablation & 8 (4 + 4) & earlier & --- & eccentric configuration, \SI{0.15}{\kg} & \ref{sec:eval:eccablation} \\
+Development flights & single to 8 & earlier & --- & changes confounded; mechanisms only & \ref{sec:eval:collapse} \\
 \bottomrule
 \end{tabularx}
 \end{table}
+
+The deployed system is the combination of R and rule~D. Its primary evidence
+is the $180$-flight validation of Section~\ref{sec:eval:deployed}, flown with
+the deployed system itself from the mainline code base under nominal release,
+delayed detachment, uncommanded loss, a jammed gripper and a thrust-map error.
+The R arm of the estimator comparison --- $48$ flights with a nominal thrust map
+and no injected fault, plus four thrust-map smoke flights --- flew the same
+combination from the campaign code base; it is the evidence for choosing R, and
+it is a different batch, neither paired nor pooled with the validation. The
+fault, jam and thrust-map results of the historical release campaign, and every
+result of the cohort, were obtained with F. Where the validation repeats them,
+its results are the ones that describe the deployed system; the historical
+results are kept because they document how the design was reached, and because
+the cohort's mass-evidence rules were flown only there. The mass-estimation
+results of the cohort and the historical campaign do not transfer to R at all.
 
 \subsection{Attempts and exclusions}\label{sec:eval:attempts}
 
@@ -526,6 +912,39 @@ solve time for both optimisers.
 Ground truth is used only in offline scoring. The composite-mass truth is the
 airframe mass plus the payload mass while the simulator's joint record shows the
 payload attached; it never reaches the estimator.
+
+\subsection{Experimental unit and statistical reading}\label{sec:eval:stats}
+
+The experimental unit is one flight, or one pair of flights where two arms are
+compared. No experimental factor is randomised within a cell: there is no wind,
+no randomised initial state, payload mass or grasp position, and the recorded
+seeds determine only the order of cells within blocks and the pairing. Two
+sources make repeated flights of one cell differ. The simulator adds small
+Gaussian noise to its sensors (inertial unit: \SI{8.7e-4}{\radian\per\second}
+on the rates and \SI{6.4e-3}{\meter\per\second\squared} on the specific force;
+barometer and magnetometer), from a generator whose seed is not recorded. And
+the multi-process stack --- simulator, autopilot, bridge, estimator and
+controller, each on its own clock and thread --- does not schedule its messages
+identically from run to run. The resulting variation is visible in every table,
+for example in the grasp height, the timing of the release relative to the
+figure-eight phase and the solver iteration counts. It is not a sample of the
+physical variation a fielded vehicle would meet, and the rotor speeds and
+odometry the estimator uses are close to noise-free.
+
+The statistics are read accordingly. Wilcoxon tests, bootstrap intervals and
+Clopper--Pearson intervals describe the \emph{repeatability} of an effect across
+replicates of the same simulated conditions; they do not license inference to
+other airframes, sensors or environments. Effect sizes --- paired medians with
+their intervals and better/same/worse counts --- are the primary quantities; $p$
+values are secondary. Two further limits apply. With $n$ pairs the smallest
+attainable two-sided Wilcoxon $p$ is $2^{1-n}$, so $p=0.031$ with six pairs and
+$p=0.008$ with eight mean only that every pair moved in the same direction; and
+a zero count in $n$ flights bounds the rate only by the Clopper--Pearson limit,
+$0.37$ for $n=8$ and $0.14$ for $n=24$. No correction for multiple comparisons
+is applied. Endpoints fixed before a batch are called \emph{pre-specified}: they
+were written to a dated file in the batch directory before the first flight, but
+not deposited in a public, time-stamped registry. Subgroup results and every
+metric not fixed before its batch are exploratory, and are reported as such.
 
 \section{Primary Results}\label{sec:eval:results}
 
@@ -787,9 +1206,14 @@ and about \SI{0.12}{\meter} at \SI{4}{\meter\per\second}. What does change
 tracking is the residual specific force, whose contribution is isolated in
 Section~\ref{sec:eval:l1ablation}.
 
-\section{Release Campaign with Force-Balance Evidence}\label{sec:eval:campaign}
+\section{Historical Release Campaign with Force-Balance Evidence}\label{sec:eval:campaign}
 
-The cohort leaves three questions open: whether release evidence that does not
+This campaign was flown with the full-state estimator F from the campaign code
+base, before the reduced estimator was adopted. Its release, fault and
+thrust-map experiments were repeated with the deployed system in
+Section~\ref{sec:eval:deployed}, whose results supersede these for the deployed
+system; the controller comparison of Section~\ref{sec:eval:camp:ctrl} exists
+only here. The cohort leaves three questions open: whether release evidence that does not
 pass through the mass estimate removes the carry-phase false acceptances of the
 always-on rule; whether such a rule can detect a load lost without a command and
 remain safe when a commanded release fails; and how the interface compares with
@@ -1039,7 +1463,9 @@ failures. With the lighter payload the loaded vehicle already read as empty
 of the $12$ flights: protection against uncommanded loss was silently lost.
 Confirmation followed the command by the length of the hold alone, because the
 score was already high; with delayed detachment, which E3 did not include, the
-same rule would be expected to accept before the payload left. With the heavier
+same rule would be expected to accept before the payload left. The deployed-system
+validation flew that combination, and the rule did accept early in every flight
+(Section~\ref{sec:eval:deployed}). With the heavier
 payload the watchdog armed, but the largest carry score reached $0.85$ in one
 flight, close to the $0.90$ threshold. The dual enabling prevented every false
 acceptance in E3; it cannot restore evidence the thrust map has removed.
@@ -1123,7 +1549,9 @@ airframe and gripper geometry, centred grasps, no wind --- and some of its own.
 The thrust-map error was applied to the estimator and the detector together.
 The plant, the controller's thrust-to-throttle map and the residual were not
 perturbed, so E3 does not represent an error that also affects the actuation
-side. E3 also used only nominal release. Every zero-count result is bounded by the cell sizes: an upper bound of
+side. E3 also used only nominal release; delayed detachment with an
+under-reading map was flown later, with the deployed system
+(Section~\ref{sec:eval:deployed}). Every zero-count result is bounded by the cell sizes: an upper bound of
 $0.10$ for early acceptance and $0.14$ for false acceptance under a jam. The
 interface code of the campaign was not committed; the record holds the base
 revision, a patch of the uncommitted changes and an archive of untracked files,
@@ -1197,8 +1625,8 @@ the lifecycle.
 
 \subsection{Full-state versus reduced estimator}\label{sec:eval:reduced}
 
-Every flight reported so far in this chapter was flown with the full-state
-estimator F of Section~\ref{sec:model:mhe}. The deployed default is now the
+Every historical flight reported so far in this chapter was flown with the
+full-state estimator F of Section~\ref{sec:model:mhe}. The deployed default is now the
 reduced velocity--mass estimator R of Section~\ref{sec:frame:redmodel}. This
 subsection gives the evidence for that change in three parts: an offline replay
 over the recorded release campaign, a four-flight thrust-map smoke test of R in
@@ -1271,7 +1699,7 @@ loop.
 \paragraph{Thrust-map smoke test.} Before the closed-loop comparison, R was flown
 once in each of four conditions --- thrust map \SI{-10}{\percent} and
 \SI{+10}{\percent}, payload \SI{0.15}{\kg} and \SI{0.30}{\kg}, at
-\SI{2}{\meter\per\second} with immediate detachment --- with the pre-registered
+\SI{2}{\meter\per\second} with immediate detachment --- with the pre-specified
 rule that any divergence, any model update during an unhealthy interval or any
 failed safety fallback would stop the comparison. None occurred. No flight
 recorded a non-zero solver status or a re-initialisation, so the iteration-limit
@@ -1330,7 +1758,7 @@ mass did not change during any hold.
 \begin{table}[ht]
 \centering
 \caption[Full-state against reduced estimator in closed loop]{Full-state (F)
-against reduced (R) estimator in closed loop, pre-registered metrics, all $48$
+against reduced (R) estimator in closed loop, pre-specified metrics, all $48$
 pairs. Medians per arm; $\Delta$ is the median paired difference R$-$F with its
 bootstrap \SI{95}{\percent} confidence interval; $p$: Wilcoxon signed-rank;
 B/S/W: pairs in which R was better, the same or worse. Loaded window: from
@@ -1356,7 +1784,7 @@ MHE solve time P95 [ms]       & 4.89   & 0.35   & $-4.57$   & $[-6.22, -3.29]$  
 \end{tabular}
 \end{table}
 
-Table~\ref{tab:fr-prereg} gives the pre-registered continuous metrics. The mass
+Table~\ref{tab:fr-prereg} gives the pre-specified continuous metrics. The mass
 advantage of R grows with speed: the loaded mass MAE fell from
 \SI{0.0179}{\kg} to \SI{0.0120}{\kg} at \SI{2}{\meter\per\second} (R better in
 $22$ of $24$ pairs) and from \SI{0.0535}{\kg} to \SI{0.0190}{\kg} at
@@ -1370,7 +1798,7 @@ at \SI{2}{\meter\per\second} (by \SI{7}{\milli\meter}, $18$ of $24$ pairs,
 $p=0.016$) and with the heavier payload (by \SI{8.5}{\milli\meter}, $19$ of $24$,
 $p=0.011$), not overall.
 
-\paragraph{Acceptance.} All pre-registered acceptance criteria were met: no
+\paragraph{Acceptance.} All pre-specified acceptance criteria were met: no
 divergence with R; no sustained solver failure, and fewer non-zero solver
 statuses than F; no more early confirmations, missed releases or
 \textsc{unresolved} outcomes than F; a loaded mass MAE lower with a confidence
@@ -1380,17 +1808,18 @@ error; solve-time P50 and P95 lower with confidence intervals below zero; no
 iteration-limit runs and no re-initialisation under a \SI{-10}{\percent} thrust
 map (smoke test above); and no model update while the estimate was unhealthy.
 The last criterion, safe hover after every \textsc{unresolved}, was not exercised,
-because no flight entered that state.
+because no flight entered that state; it was exercised in $48$ flights of the
+deployed-system validation and met (Section~\ref{sec:eval:dep:accept}).
 
 \paragraph{Exploratory metrics.} Table~\ref{tab:fr-explore} adds metrics that
-were \emph{not} pre-registered, computed on the windows of
+were \emph{not} pre-specified, computed on the windows of
 Section~\ref{sec:eval:metrics} so that they can be read against the cohort; they
 are reported as exploratory.
 
 \begin{table}[ht]
 \centering
 \caption[Full-state against reduced estimator: exploratory metrics]{Full-state
-(F) against reduced (R) estimator, exploratory metrics (not pre-registered), on
+(F) against reduced (R) estimator, exploratory metrics (not pre-specified), on
 the windows of Section~\ref{sec:eval:metrics}. Notation as in
 Table~\ref{tab:fr-prereg}; collapse fraction: share of loaded figure-eight samples
 with $\hat m_P$ below half the true payload; bound fraction: share of loaded
@@ -1438,6 +1867,94 @@ floor its rotational consequence during carry, so a more accurate mass has
 little left to correct in the loop. The comparison is therefore evidence for the
 reduced estimator as an estimator --- accuracy, health and computation --- not
 for a tracking benefit.
+
+\paragraph{Replay ablations and simple estimator baselines.} Three questions
+about the reduced estimator can be answered on the recorded data of the $48$ R
+flights without flying again: whether the reference point of the translational
+state matters (Section~\ref{sec:model:refpoint}), whether the newest measurement
+$y_N$, which carries no cost in \eqref{eq:mhe}, should, and whether a simpler
+estimator on the same signals would do as well. All variants were run on the
+odometry, interval-averaged reconstructed thrust and \SI{10}{\hertz} ticks of
+each flight, with the event de-weighting triggered at the recorded physical
+attach and detach. The replay of R itself reproduced the online estimate to
+within \SI{7e-6}{\kg} in every flight. Like the replay of
+Table~\ref{tab:reducedreplay}, it joins the samples across the grasp gap, so its
+convergence times after lift-off are shorter than the online ones and only
+differences between variants are meaningful. The variants are:
+\emph{CoM}, R fed the composite-centre velocity of \eqref{eq:transport} with the
+true payload and arm; \emph{$y_N$}, R with the velocity residual of the newest
+measurement added at the terminal node, at the weight of the other stages;
+\emph{window}, the window force balance \eqref{eq:winbal} re-evaluated at every
+tick; \emph{low-pass}, the ratio of the low-passed vertical thrust to the
+low-passed $g+a_z$ (time constant \SI{1}{\second}); \emph{RLS}, recursive least
+squares on $1/\mT$ in \eqref{eq:trans} with forgetting factor $0.95$; and
+\emph{EKF}, an extended Kalman filter on $[\bm v;\mT]$ with the model
+\eqref{eq:redmodel}, a random-walk mass (\SI{0.05}{\kg}\,s$^{-1/2}$),
+process noise \SI{0.3}{\meter\per\second\squared} and the estimator's velocity
+noise. The four baselines use exactly the inputs of R --- reconstructed thrust and
+measured attitude --- and differ from it only in how the mass is extracted. Their
+tuning was fixed once, before the replay, and not optimised.
+
+\begin{table}[ht]
+\centering
+\caption[Replay ablations of the reduced estimator and simple baselines]{Replay
+ablations of the reduced estimator (R) and simple estimators on the same
+signals, $48$ R flights of the paired comparison. Medians over flights; loaded
+and post-release windows as in Table~\ref{tab:fr-prereg}; figure-eight: the
+$24$ flights at \SI{4}{\meter\per\second}. $\Delta t$: median paired difference
+of the convergence time from R (B/S/W: variant faster, same, slower).
+Convergence: entry into $\pm\SI{0.03}{\kg}$ held for \SI{1}{\second}.}
+\label{tab:replayablation}
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}l c c c c c@{}}
+\toprule
+& \multicolumn{3}{c}{\textbf{Mass MAE [kg]}} & \multicolumn{2}{c}{$\bm{\Delta t}$ \textbf{to converge [s]}} \\
+\cmidrule(lr){2-4}\cmidrule(lr){5-6}
+\textbf{Estimator} & \textbf{Loaded} & \textbf{Figure-eight} & \textbf{Post-release} & \textbf{After lift-off} & \textbf{After detachment} \\
+\midrule
+R (replay)        & 0.0132 & 0.0209 & 0.0095 & ---              & ---              \\
+R, CoM velocity   & 0.0132 & 0.0210 & 0.0095 & $0.00$ (0/48/0)  & $0.00$ (0/48/0)  \\
+R, with $y_N$     & 0.0132 & 0.0209 & 0.0095 & $-0.30$ (48/0/0) & $-0.20$ (46/0/2) \\
+\midrule
+Window balance    & 0.0137 & 0.0225 & 0.0102 & $+0.75$ (0/0/48) & $+0.50$ (8/4/36) \\
+Low-pass ratio    & 0.0141 & 0.0224 & 0.0101 & $+1.90$ (0/0/48) & $+0.30$ (15/5/28) \\
+RLS               & 0.0149 & 0.0208 & 0.0086 & $+3.95$ (0/0/48) & $+1.70$ (3/0/45) \\
+EKF               & 0.0132 & 0.0210 & 0.0096 & $+0.50$ (0/0/48) & $-0.40$ (46/1/1) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:replayablation} gives three answers. \emph{The reference point
+does not matter here.} Replacing the origin velocity by the composite-centre
+velocity changed the figure-eight mass error by \SI{0.05}{\gram} and the bias not
+at all ($-0.88$ against $-0.88$\,\%), so the transport term neglected in
+Section~\ref{sec:model:refpoint} is not the source of the residual
+manoeuvre-induced bias. \emph{The newest measurement is worth adding.} With
+$y_N$ in the cost the accuracy was unchanged, but the estimate converged
+\SI{0.30}{\second} sooner after lift-off in every flight and \SI{0.20}{\second}
+sooner after detachment in $46$ of $48$: omitting $y_N$ costs about one sample
+of delay, as the structure of \eqref{eq:mhe} implies. The omission was an
+implementation convention, not a design choice. It does not affect release
+acceptance, which uses the force balance, but it delays the controller's model
+update by the same amount; the change is a candidate for the next revision of the
+deployed estimator and has not been flown. \emph{A moving horizon is not what
+makes the estimate accurate.} An extended Kalman filter on the same model and
+inputs matched R to within \SI{0.2}{\gram} in loaded flight and
+\SI{0.1}{\gram} in the figure-eight; it converged \SI{0.5}{\second} later after
+lift-off and \SI{0.4}{\second} sooner after detachment, a trade set by its
+random-walk tuning. The algebraic window balance and the low-pass ratio were
+\SIrange{0.5}{1.6}{\gram} less accurate and slower to converge, and RLS was as
+accurate in manoeuvre but several seconds slower. The accuracy gain over the
+full-state estimator of Tables~\ref{tab:reducedreplay} and~\ref{tab:fr-prereg}
+therefore comes from the model structure that all of these estimators share ---
+reconstructed thrust as a known input, measured attitude, no rotational channel
+--- and not from the moving-horizon solution. What a moving horizon adds in this
+design --- the explicit window that the event de-weighting acts on, and the
+numerical box with the health check that the \SI{-10}{\percent} thrust-map
+replay and smoke test exercised --- has not been compared with an equivalent
+mechanism in a filter, and these baselines were not run on the thrust-map flights
+or in closed loop. They are open-loop replays on trajectories flown with R.
 
 \subsection{The horizontal-offset decision}\label{sec:eval:eccablation}
 
@@ -1586,10 +2103,11 @@ implemented.
 \subsection{Configuration and default-safety}\label{sec:eval:defaults}
 
 Two code bases are involved, and a statement about a default must name one.
-Every flight reported in this chapter was run from the \emph{campaign code
-base}, in which the configuration is selected by switches. The \emph{mainline
-code base}, extracted from it on 5 November 2026, contains the deployed system
-only.
+Every historical flight reported in this chapter, including the paired F/R
+comparison, was run from the \emph{campaign code base}, in which the
+configuration is selected by switches. The \emph{mainline code base}, extracted
+from it on 5 November 2026, contains the deployed system only; the
+deployed-system validation of Section~\ref{sec:eval:deployed} was run from it.
 
 In the campaign code base the estimator model and the evidence form are selected
 by environment switches whose library defaults differ from those of the
@@ -1670,20 +2188,30 @@ occurred. With the map high, the release was missed and the flight ended in
 \textsc{unresolved}, and the controller's model mass in carry was 7--9\,\% heavy.
 With the map low, the lighter payload read as absent in the detector, which
 silently disabled the uncommanded-loss watchdog, and the controller's model
-held the bare-airframe mass with either payload. The designed
-$\pm\SI{5}{\percent}$ level has not been flown.
+held the bare-airframe mass with either payload. The deployed system,
+flown with the same errors (Section~\ref{sec:eval:deployed}), failed in the same
+two directions, and under the under-reading map with delayed detachment it
+accepted every release with the lighter payload about \SI{3.1}{\second} before
+the payload left. The designed $\pm\SI{5}{\percent}$ level has not been
+flown.
 
 \subsection{Experiments designed but not run}\label{sec:eval:notrun}\label{sec:eval:partial}\label{sec:eval:seed}
 
-Three experiments were designed for this dissertation but not run in the
-evaluated configuration. They are listed so that their absence is explicit; no
-result is claimed for any of them.
+Four experiments were designed for this dissertation but not run, or run only
+in part. They are listed so that their absence is explicit; no result is claimed
+for the parts not run.
 \begin{itemize}
 \item \textbf{Small thrust-map mismatch} ($k_f$ scaled by $0.95$ and $1.05$).
 Its expected effect is the analytical sensitivity of
-Section~\ref{sec:eval:thrustcal}. Only the $\pm\SI{10}{\percent}$ level was
-flown, in the estimator and the detector together
-(Section~\ref{sec:eval:camp:thrust}).
+Section~\ref{sec:eval:thrustcal}. It is defined in the batch driver of the
+mainline code base but was not flown; only the $\pm\SI{10}{\percent}$ level
+was, in the estimator and the detector together
+(Sections~\ref{sec:eval:deployed} and~\ref{sec:eval:camp:thrust}).
+\item \textbf{Thrust-map error with delayed detachment} (gains $0.90$ and
+$1.10$, all four conditions, detachment held \SI{4}{\second}). Only gain $0.90$
+with the lighter payload was flown, in the deployed-system validation, where it
+produced early acceptance in every flight (Section~\ref{sec:eval:deployed}); the
+heavier payload and the over-reading map were not flown with delayed detachment.
 \item \textbf{Partial payload loss} (four \SI{0.05}{\kg} boxes, three removed
 one at a time without a signal, against a no-loss control arm). This is the case
 a binary attached/detached abstraction cannot represent at all, and the one where
@@ -1693,8 +2221,10 @@ a continuous interface would be expected to differ in kind.
 \SI{4}{\meter\per\second}). The only evidence for the window seed is the
 development observation of Section~\ref{sec:model:seed}.
 \end{itemize}
-Unsignaled loss, the fourth scenario outside the cohort, was flown in the
-release campaign under the force-balance rule (Section~\ref{sec:eval:camp:loss});
+Unsignaled loss, the fourth scenario outside the cohort, was flown under the
+force-balance rule, in the historical release campaign
+(Section~\ref{sec:eval:camp:loss}) and with the deployed system
+(Section~\ref{sec:eval:deployed});
 it has not been flown under the mass-evidence rules, for the reason given in
 Section~\ref{sec:eval:conditions}. The open experiments are taken up in
 Chapter~\ref{ch:conclusion}.
@@ -1765,41 +2295,83 @@ experiment variables. One software-in-the-loop flight of the mainline system at
 release confirmed \SI{2.4}{\second} after the command and no controller solver
 failure. This is a regression check of the extraction, not an evaluation result.
 
+The deployed-system validation of Section~\ref{sec:eval:deployed}, unlike the
+historical batches, was run from a tagged commit with no uncommitted change to
+the flight code, which the fingerprint recorded before every flight confirms
+(Appendix~\ref{app:deployed-id}). It is reproduced from the mainline repository
+by
+\begin{footnotesize}
+\begin{verbatim}
+cd /home/clear/MHE_NMPC && git checkout deployed-r-armd-180-v1 \
+  && colcon build && i=1; \
+  for e in release faults thrust thrust_low_d4; do \
+    EXP=$e SEED=2026110600$i bash scripts/run_batch.sh; \
+    i=$((i+1)); \
+  done && python3 scripts/tools/campaign_eval.py
+\end{verbatim}
+\end{footnotesize}
+which flies the four segments with the seeds of Table~\ref{tab:dep-design}
+(\texttt{20261106001} to \texttt{20261106004}), so that the schedules are
+regenerated exactly, and then scores them with the analysis script
+\texttt{scripts/tools/campaign\_eval.py}. The schedules are reproduced exactly;
+the flights themselves are reproduced only up to the run-to-run variation of
+Section~\ref{sec:eval:stats}. The analysis script reads the batch directories
+only, and the acceptance criteria are kept with the results in
+\texttt{results/campaign\_180\_analysis/acceptance\_criteria.md}.
+
 \section{Chapter Summary}\label{sec:eval:summary}
 
-This chapter addressed the fifth research objective with a frozen, randomised
-cohort of $120$ software-in-the-loop flights, a smaller frozen ablation and a
-second frozen campaign of $312$ flights.
-The answers to the five questions are, in brief: the mass is accurate in loaded
-hover and collapses periodically in sustained manoeuvre at
+This chapter addressed the fifth research objective. Its primary evidence is a
+validation of the deployed system --- the reduced estimator with the
+force-balance release rule --- in $180$ software-in-the-loop flights from a
+tagged commit of the mainline code base (Section~\ref{sec:eval:deployed}). The
+four acceptance criteria, inherited from the pre-specified F/R comparison and
+fixed after $11$ of the $180$ flights, were all met: no divergence and no
+estimator re-initialisation in $72$ nominal releases, no change of the
+controller's model mass while the estimate was unhealthy in any of the $180$
+flights, and a safe hover after each of the $48$ \textsc{unresolved} outcomes.
+Every nominal release was confirmed, none early and none during carry,
+\SI{2.17}{\second} after physical detachment at the median
+(\SIrange{1.86}{2.52}{\second}), with a loaded mass error of
+\SI{0.013}{\kg} and no collapse of the estimate in manoeuvre; $24$ of $24$
+uncommanded losses were detected and none of $24$ jammed releases accepted. The
+estimator solved in \SI{0.31}{\milli\second} at the median and never in more
+than \SI{2.3}{\milli\second}. The thrust map bounds the system: with it
+\SI{10}{\percent} high every release was missed and ended in a safe hover; with
+it \SI{10}{\percent} low the lighter payload read as absent, so the loss
+watchdog never armed, and under delayed detachment the release was accepted in
+all $12$ flights about \SI{3.1}{\second} before the payload left. The rule is
+therefore correct only while the thrust map is accurate to better than the
+payload's share of the composite mass.
+
+The historical sources, flown with the full-state estimator, explain how the
+design was reached. In the frozen cohort of $120$ flights the mass was accurate in
+loaded hover and collapsed periodically in sustained manoeuvre at
 \SI{4}{\meter\per\second} (Q1); every one of the $118$ eligible releases was
 accepted, \SIrange{2.3}{3.2}{\second} after physical detachment (Q2); under
-delayed detachment, the evidence-gated arms never accepted a release while the
+delayed detachment the evidence-gated arms never accepted a release while the
 payload was attached, whereas the command-triggered arm always did (Q3); the
-always-on confirmation accepted $114$ releases that had not happened during
-high-speed carry, and the command-armed confirmation none, at no cost in delay
-(Q4); and the release arm did not change tracking, while the residual specific
-force improved it without changing the mass bias (Q5). In the campaign, a
-force-balance release rule enabled by the command or by an airborne-load
-watchdog accepted no release during carry in $240$ flights, never accepted
-before a delayed detachment, detected $24$ of $24$ uncommanded losses and
-accepted none of $24$ jammed releases; it is, however, sensitive to the thrust
-map in both directions, and a \SI{10}{\percent} underestimate disabled the
-watchdog for the lighter payload. Adaptation clearly beat the fixed-parameter
-controller in carry, while estimating the mass gave no consistent tracking
-benefit over the residual alone. All of these results were obtained with the
-full-state estimator. Its replacement by the reduced velocity--mass estimator is
-supported by a replay of the 312 campaign flights, in which the reduced estimate
-had the smaller loaded mass error in every nominal flight, by a thrust-map
-smoke test in which its health check flagged the under-reading map and held the
-controller's model, and by a paired closed-loop comparison of $96$ flights in
-which it met every pre-registered acceptance criterion: the loaded mass error fell
-from \SI{0.035}{\kg} to \SI{0.013}{\kg}, the manoeuvre-induced collapse
-disappeared, the solve time fell from \SI{2.8}{\milli\second} to
-\SI{0.3}{\milli\second}, and neither tracking nor the lifecycle changed
-(Section~\ref{sec:eval:reduced}). Beyond that replay and four smoke flights, no
-estimator-side thrust-map, partial-loss or hardware result exists. Chapter~\ref{ch:conclusion}
-draws the conclusions these results support, and only those.
+always-on confirmation on the mass evidence accepted $114$ releases that had not
+happened during high-speed carry, and the command-armed confirmation none, at no
+cost in delay (Q4); and the release arm did not change tracking, while the
+residual specific force improved it without changing the mass bias (Q5). The
+historical campaign of $312$ flights introduced the force-balance rule, which
+removed the carry-phase false acceptances, and showed that adaptation clearly
+beat a fixed-parameter controller in carry while estimating the mass gave no
+consistent tracking benefit over the residual alone. The paired closed-loop
+comparison of $96$ flights then chose the reduced estimator: it met every
+pre-specified acceptance criterion, lowered the loaded mass error from
+\SI{0.035}{\kg} to \SI{0.013}{\kg}, removed the manoeuvre-induced collapse and
+solved about ten times faster, with neither tracking nor the lifecycle changed
+(Section~\ref{sec:eval:reduced}). Replayed on the same flights, an extended
+Kalman filter with the reduced estimator's inputs was as accurate, so the gain
+belongs to the model structure rather than to the moving horizon; penalising the
+newest measurement would shorten convergence by \SIrange{0.2}{0.3}{\second}; and
+correcting the velocity to the composite centre of mass changed nothing. These
+replays are open-loop analyses of recorded flights, not closed-loop results. No
+actuation-side thrust-map, small thrust-map, partial-loss or hardware result
+exists. Chapter~\ref{ch:conclusion} draws the conclusions these results support,
+and only those.
 
 \end{spacing}
 \newpage
